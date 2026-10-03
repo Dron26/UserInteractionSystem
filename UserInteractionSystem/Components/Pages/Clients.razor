@@ -1,0 +1,33 @@
+@page "/clients"
+@inject UserInteractionSystem.Application.Services.ClientService ClientService
+
+<PageTitle>Клиенты</PageTitle>
+
+<h1>Клиенты</h1>
+
+@if (clients.Count == 0)
+{
+    <p>Клиенты отсутствуют.</p>
+}
+else
+{
+    <ul>
+        @foreach (var client in clients)
+        {
+            <li>
+                <div>@client.FullName</div>
+                <div>@client.Phone</div>
+                <div>@client.Email</div>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+    private List<UserInteractionSystem.Domain.Entities.Client> clients = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        clients = await ClientService.GetClientsAsync();
+    }
+}
