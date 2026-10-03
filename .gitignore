@@ -361,5 +361,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
-
+# Local SQLite database files
+*.db
+*.db-shm
+*.db-wal
 AGENTS.md

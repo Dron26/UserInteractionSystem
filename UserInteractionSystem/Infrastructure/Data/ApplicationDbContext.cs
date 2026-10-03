@@ -9,7 +9,10 @@ public class ApplicationDbContext : DbContext
         : base(options)
     {
     }
-
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+    }
     public DbSet<Client> Clients { get; set; } = null!;
 
     public DbSet<User> Users { get; set; } = null!;
