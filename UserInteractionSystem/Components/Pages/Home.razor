@@ -1,7 +1,29 @@
 ﻿@page "/"
+@inject UserInteractionSystem.Application.Services.ClientService ClientService
 
 <PageTitle>Home</PageTitle>
 
 <h1>Hello, world!</h1>
 
-Welcome to your new app.
+@if (clients.Count == 0)
+{
+    <p>Клиенты отсутствуют.</p>
+}
+else
+{
+    <ul>
+        @foreach (var client in clients)
+        {
+            <li>@client.FullName</li>
+        }
+    </ul>
+}
+
+@code {
+    private List<UserInteractionSystem.Domain.Entities.Client> clients = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        clients = await ClientService.GetClientsAsync();
+    }
+}
