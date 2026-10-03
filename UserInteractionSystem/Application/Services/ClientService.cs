@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using UserInteractionSystem.Domain.Entities;
 using UserInteractionSystem.Infrastructure.Data;
 
 namespace UserInteractionSystem.Application.Services;
@@ -9,5 +11,12 @@ public class ClientService
     public ClientService(ApplicationDbContext dbContext)
     {
         _dbContext = dbContext;
+    }
+
+    public async Task<List<Client>> GetClientsAsync()
+    {
+        return await _dbContext.Clients
+            .Where(client => !client.IsArchived)
+            .ToListAsync();
     }
 }
