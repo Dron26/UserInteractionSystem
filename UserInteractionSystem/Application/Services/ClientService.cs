@@ -19,4 +19,13 @@ public class ClientService
             .Where(client => !client.IsArchived)
             .ToListAsync();
     }
+
+    public async Task<bool> AddClientAsync(Client client)
+    {
+        await _dbContext.Clients.AddAsync(client);
+        
+        var result = await _dbContext.SaveChangesAsync();
+
+        return result > 0;
+    }
 }
