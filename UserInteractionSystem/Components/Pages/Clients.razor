@@ -8,9 +8,13 @@
 <h1>Клиенты</h1>
 <EditForm Model="newClient" OnValidSubmit="AddClient" FormName="client-form">
     
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
     <div>
         <label>ФИО</label>
         <InputText @bind-Value="newClient.FullName" />
+        <ValidationMessage For="@(() => newClient.FullName)" />
     </div>
 
     <div>
@@ -21,6 +25,7 @@
     <div>
         <label>Email</label>
         <InputText @bind-Value="newClient.Email" />
+        <ValidationMessage For="@(() => newClient.Email)" />
     </div>
 
     <div>
@@ -46,6 +51,7 @@ else
                 <div>@client.FullName</div>
                 <div>@client.Phone</div>
                 <div>@client.Email</div>
+                <button type="button" @onclick="() => ArchiveClient(client.Id)">Архивировать</button>
             </li>
         }
     </ul>
@@ -82,6 +88,16 @@ else
         {
             FullName = string.Empty
         };
+    }
+
+    private async Task ArchiveClient(int clientId)
+    {
+        var archived = await ClientService.ArchiveClientAsync(clientId);
+
+        if (archived)
+        {
+            await LoadClients();
+        }
     }
 }
 

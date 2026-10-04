@@ -28,4 +28,19 @@ public class ClientService
 
         return result > 0;
     }
+
+    public async Task<bool> ArchiveClientAsync(int clientId)
+    {
+        var client = await _dbContext.Clients.FindAsync(clientId);
+
+        if (client is null)
+        {
+            return false;
+        }
+
+        client.IsArchived = true;
+        await _dbContext.SaveChangesAsync();
+
+        return true;
+    }
 }
