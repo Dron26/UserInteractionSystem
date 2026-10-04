@@ -1,9 +1,37 @@
 @page "/clients"
 @inject UserInteractionSystem.Application.Services.ClientService ClientService
+@using UserInteractionSystem.Domain.Entities
+@rendermode InteractiveServer
 
 <PageTitle>Клиенты</PageTitle>
 
 <h1>Клиенты</h1>
+<EditForm Model="newClient" OnValidSubmit="AddClient" FormName="client-form">
+    
+    <div>
+        <label>ФИО</label>
+        <InputText @bind-Value="newClient.FullName" />
+    </div>
+
+    <div>
+        <label>Телефон</label>
+        <InputText @bind-Value="newClient.Phone" />
+    </div>
+
+    <div>
+        <label>Email</label>
+        <InputText @bind-Value="newClient.Email" />
+    </div>
+
+    <div>
+        <label>Комментарий</label>
+        <InputTextArea @bind-Value="newClient.Comment" />
+    </div>
+
+    <button type="submit">Добавить клиента</button>
+</EditForm>
+
+
 
 @if (clients.Count == 0)
 {
@@ -24,10 +52,36 @@ else
 }
 
 @code {
-    private List<UserInteractionSystem.Domain.Entities.Client> clients = [];
+    private List<Client> clients = [];
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadClients();
+    }
+
+    private Client newClient = new()
+        {
+            FullName = string.Empty
+        };
+
+    private async Task LoadClients()
+    {
         clients = await ClientService.GetClientsAsync();
     }
+
+    private async Task AddClient()
+    {
+        newClient.CreatedAt = DateTime.UtcNow;
+        newClient.IsArchived = false;
+
+        await ClientService.AddClientAsync(newClient);
+
+        await LoadClients();
+
+        newClient = new Client
+        {
+            FullName = string.Empty
+        };
+    }
 }
+
