@@ -48,7 +48,7 @@ else
         @foreach (var client in clients)
         {
             <li>
-                <div>@client.FullName</div>
+                <div><a href="@($"/clients/{client.Id}")">@client.FullName</a></div>
                 <div>@client.Phone</div>
                 <div>@client.Email</div>
                 <button type="button" @onclick="() => ArchiveClient(client.Id)">Архивировать</button>

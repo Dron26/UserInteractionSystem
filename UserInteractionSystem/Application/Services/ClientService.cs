@@ -20,6 +20,11 @@ public class ClientService
             .ToListAsync();
     }
 
+    public async Task<Client?> GetClientByIdAsync(int clientId)
+    {
+        return await _dbContext.Clients.FindAsync(clientId);
+    }
+
     public async Task<bool> AddClientAsync(Client client)
     {
         await _dbContext.Clients.AddAsync(client);

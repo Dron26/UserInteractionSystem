@@ -1,0 +1,48 @@
+@page "/clients/{id:int}"
+@inject UserInteractionSystem.Application.Services.ClientService ClientService
+@rendermode InteractiveServer
+
+<PageTitle>Карточка клиента</PageTitle>
+
+<h1>Карточка клиента</h1>
+
+@if (client is null)
+{
+    <p>Клиент не найден</p>
+}
+else
+{
+    <dl>
+        <dt>ФИО</dt>
+        <dd>@client.FullName</dd>
+
+        <dt>Телефон</dt>
+        <dd>@client.Phone</dd>
+
+        <dt>Email</dt>
+        <dd>@client.Email</dd>
+
+        <dt>Комментарий</dt>
+        <dd>@client.Comment</dd>
+
+        <dt>Дата создания</dt>
+        <dd>@client.CreatedAt</dd>
+    </dl>
+
+    @if (client.IsArchived)
+    {
+        <p>Клиент архивирован.</p>
+    }
+}
+
+@code {
+    [Parameter]
+    public int id { get; set; }
+
+    private UserInteractionSystem.Domain.Entities.Client? client;
+
+    protected override async Task OnInitializedAsync()
+    {
+        client = await ClientService.GetClientByIdAsync(id);
+    }
+}
