@@ -25,6 +25,25 @@ public class ClientService
         return await _dbContext.Clients.FindAsync(clientId);
     }
 
+    public async Task<bool> UpdateClientAsync(Client client)
+    {
+        var existingClient = await _dbContext.Clients.FindAsync(client.Id);
+
+        if (existingClient is null || existingClient.IsArchived)
+        {
+            return false;
+        }
+
+        existingClient.FullName = client.FullName;
+        existingClient.Phone = client.Phone;
+        existingClient.Email = client.Email;
+        existingClient.Comment = client.Comment;
+
+        await _dbContext.SaveChangesAsync();
+
+        return true;
+    }
+
     public async Task<bool> AddClientAsync(Client client)
     {
         await _dbContext.Clients.AddAsync(client);

@@ -33,6 +33,45 @@ else
     {
         <p>Клиент архивирован.</p>
     }
+    else if (!isEditing)
+    {
+        <button type="button" @onclick="StartEditing">Редактировать</button>
+    }
+
+    @if (isEditing && editClient is not null)
+    {
+        <EditForm Model="editClient"
+          OnValidSubmit="SaveClient"
+          FormName="edit-client-form">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div>
+                <label>ФИО</label>
+                <InputText @bind-Value="editClient.FullName" />
+                <ValidationMessage For="@(() => editClient.FullName)" />
+            </div>
+
+            <div>
+                <label>Телефон</label>
+                <InputText @bind-Value="editClient.Phone" />
+            </div>
+
+            <div>
+                <label>Email</label>
+                <InputText @bind-Value="editClient.Email" />
+                <ValidationMessage For="@(() => editClient.Email)" />
+            </div>
+
+            <div>
+                <label>Комментарий</label>
+                <InputTextArea @bind-Value="editClient.Comment" />
+            </div>
+
+            <button type="submit">Сохранить</button>
+            <button type="button" @onclick="CancelEditing">Отмена</button>
+        </EditForm>
+    }
 }
 
 @code {
@@ -40,9 +79,55 @@ else
     public int id { get; set; }
 
     private UserInteractionSystem.Domain.Entities.Client? client;
+    private UserInteractionSystem.Domain.Entities.Client? editClient;
+    private bool isEditing;
 
     protected override async Task OnInitializedAsync()
     {
         client = await ClientService.GetClientByIdAsync(id);
+    }
+
+    private void StartEditing()
+    {
+        if (client is null || client.IsArchived)
+        {
+            return;
+        }
+
+        editClient = new UserInteractionSystem.Domain.Entities.Client
+        {
+            Id = client.Id,
+            FullName = client.FullName,
+            Phone = client.Phone,
+            Email = client.Email,
+            Comment = client.Comment,
+            CreatedAt = client.CreatedAt,
+            IsArchived = client.IsArchived
+        };
+
+        isEditing = true;
+    }
+
+    private async Task SaveClient()
+    {
+        if (editClient is null)
+        {
+            return;
+        }
+
+        var updated = await ClientService.UpdateClientAsync(editClient);
+
+        if (updated)
+        {
+            client = await ClientService.GetClientByIdAsync(id);
+            editClient = null;
+            isEditing = false;
+        }
+    }
+
+    private void CancelEditing()
+    {
+        editClient = null;
+        isEditing = false;
     }
 }
