@@ -36,16 +36,24 @@
     <button type="submit">Добавить клиента</button>
 </EditForm>
 
+<div>
+    <label for="client-search">Поиск по ФИО</label>
+    <input id="client-search" type="text" placeholder="Поиск по ФИО" @bind="searchText" @bind:event="oninput" />
+</div>
 
 
 @if (clients.Count == 0)
 {
     <p>Клиенты отсутствуют.</p>
 }
+else if (!filteredClients.Any())
+{
+    <p>Клиенты не найдены</p>
+}
 else
 {
     <ul>
-        @foreach (var client in clients)
+        @foreach (var client in filteredClients)
         {
             <li>
                 <div><a href="@($"/clients/{client.Id}")">@client.FullName</a></div>
@@ -59,6 +67,11 @@ else
 
 @code {
     private List<Client> clients = [];
+    private string searchText = string.Empty;
+
+    private IEnumerable<Client> filteredClients => string.IsNullOrWhiteSpace(searchText)
+        ? clients
+        : clients.Where(client => client.FullName.Contains(searchText, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync()
     {
