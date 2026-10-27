@@ -9,6 +9,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddScoped<ClientService>();
+builder.Services.AddScoped<RequestService>();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
