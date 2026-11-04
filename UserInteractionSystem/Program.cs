@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using UserInteractionSystem.Application.Services;
 using UserInteractionSystem.Components;
@@ -5,9 +6,25 @@ using UserInteractionSystem.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.");
+var sqliteConnectionString = new SqliteConnectionStringBuilder(connectionString);
+
+if (!Path.IsPathRooted(sqliteConnectionString.DataSource))
+{
+    sqliteConnectionString.DataSource = Path.GetFullPath(
+        Path.Combine(builder.Environment.ContentRootPath, sqliteConnectionString.DataSource));
+}
+
+var databaseDirectory = Path.GetDirectoryName(sqliteConnectionString.DataSource);
+if (!string.IsNullOrEmpty(databaseDirectory))
+{
+    Directory.CreateDirectory(databaseDirectory);
+}
+
 // Add services to the container.
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlite(sqliteConnectionString.ConnectionString));
 builder.Services.AddScoped<ClientService>();
 builder.Services.AddScoped<RequestService>();
 
@@ -15,6 +32,12 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await dbContext.Database.MigrateAsync();
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

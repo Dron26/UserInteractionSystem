@@ -1,0 +1,76 @@
+@page "/requests/{id:int}"
+@using UserInteractionSystem.Application.Models
+@using UserInteractionSystem.Domain.Enums
+@inject UserInteractionSystem.Application.Services.RequestService RequestService
+@rendermode InteractiveServer
+
+<PageTitle>@(request is null ? "Заявка не найдена" : $"Заявка №{request.Id}")</PageTitle>
+
+<a class="btn btn-outline-secondary mb-3" href="/requests">К списку заявок</a>
+
+@if (request is null)
+{
+    <div class="alert alert-warning" role="alert">
+        Заявка с указанным номером не найдена.
+    </div>
+}
+else
+{
+    <div class="card">
+        <div class="card-header">
+            <h1 class="h4 mb-0">Заявка №@request.Id</h1>
+        </div>
+        <div class="card-body">
+            <h2 class="card-title">@request.Title</h2>
+            <p class="card-text">@request.Description</p>
+
+            <dl class="row mb-0">
+                <dt class="col-sm-4">Клиент</dt>
+                <dd class="col-sm-8">@request.ClientName</dd>
+
+                <dt class="col-sm-4">Статус</dt>
+                <dd class="col-sm-8">@GetStatusName(request.Status)</dd>
+
+                <dt class="col-sm-4">Приоритет</dt>
+                <dd class="col-sm-8">@GetPriorityName(request.Priority)</dd>
+
+                <dt class="col-sm-4">Создана</dt>
+                <dd class="col-sm-8">@request.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</dd>
+
+                <dt class="col-sm-4">Последнее изменение</dt>
+                <dd class="col-sm-8">@request.UpdatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</dd>
+            </dl>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int id { get; set; }
+
+    private RequestDetailsItem? request;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        request = await RequestService.GetRequestByIdAsync(id);
+    }
+
+    private static string GetStatusName(RequestStatus status) => status switch
+    {
+        RequestStatus.New => "Новая",
+        RequestStatus.InProgress => "В работе",
+        RequestStatus.WaitingForClient => "Ожидает клиента",
+        RequestStatus.Completed => "Завершена",
+        RequestStatus.Cancelled => "Отменена",
+        _ => status.ToString()
+    };
+
+    private static string GetPriorityName(RequestPriority priority) => priority switch
+    {
+        RequestPriority.Low => "Низкий",
+        RequestPriority.Normal => "Обычный",
+        RequestPriority.High => "Высокий",
+        RequestPriority.Urgent => "Срочный",
+        _ => priority.ToString()
+    };
+}

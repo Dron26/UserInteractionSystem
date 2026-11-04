@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using UserInteractionSystem.Domain.Entities;
 using UserInteractionSystem.Domain.Enums;
 using UserInteractionSystem.Infrastructure.Data;
+using UserInteractionSystem.Application.Models;
 
 namespace UserInteractionSystem.Application.Services;
 
@@ -63,5 +64,47 @@ public class RequestService
         var result = await _dbContext.SaveChangesAsync();
 
         return result > 0;
+    }
+
+    public async Task<List<RequestListItem>> GetRequestListAsync()
+    {
+        return await _dbContext.Requests
+            .Join(
+                _dbContext.Clients,
+                request => request.ClientId,
+                client => client.Id,
+                (request, client) => new RequestListItem
+                {
+                    Id = request.Id,
+                    Title = request.Title,
+                    ClientName = client.FullName,
+                    Status = request.Status,
+                    Priority = request.Priority,
+                    CreatedAt = request.CreatedAt
+                })
+            .OrderByDescending(request => request.CreatedAt)
+            .ToListAsync();
+    }
+
+    public async Task<RequestDetailsItem?> GetRequestByIdAsync(int requestId)
+    {
+        return await _dbContext.Requests
+            .Where(request => request.Id == requestId)
+            .Join(
+                _dbContext.Clients,
+                request => request.ClientId,
+                client => client.Id,
+                (request, client) => new RequestDetailsItem
+                {
+                    Id = request.Id,
+                    Title = request.Title,
+                    Description = request.Description,
+                    ClientName = client.FullName,
+                    Status = request.Status,
+                    Priority = request.Priority,
+                    CreatedAt = request.CreatedAt,
+                    UpdatedAt = request.UpdatedAt
+                })
+            .FirstOrDefaultAsync();
     }
 }

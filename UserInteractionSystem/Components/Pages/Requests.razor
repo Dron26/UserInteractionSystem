@@ -1,0 +1,173 @@
+
+@page "/requests"
+@using UserInteractionSystem.Application.Models
+@using UserInteractionSystem.Domain.Enums
+@using UserInteractionSystem.Domain.Entities
+@inject UserInteractionSystem.Application.Services.ClientService ClientService
+@inject UserInteractionSystem.Application.Services.RequestService RequestService
+@rendermode InteractiveServer
+
+<PageTitle>Заявки</PageTitle>
+
+<h1>Заявки</h1>
+
+<button class="btn btn-primary mb-3"
+        @onclick="ToggleCreateForm">
+    @(showCreateForm ? "Отмена" : "Создать заявку")
+</button>
+
+@if (showCreateForm)
+{
+    <EditForm Model="newRequest" OnValidSubmit="CreateRequestAsync">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+
+        <div class="mb-3">
+            <label class="form-label">Клиент</label>
+            <InputSelect class="form-select" @bind-Value="newRequest.ClientId">
+                <option value="0">Выберите клиента</option>
+                @foreach (var client in clients)
+                {
+                    <option value="@client.Id">@client.FullName</option>
+                }
+            </InputSelect>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Название</label>
+            <InputText class="form-control" @bind-Value="newRequest.Title" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Описание</label>
+            <InputTextArea class="form-control" @bind-Value="newRequest.Description" />
+        </div>
+
+        <button type="submit" class="btn btn-success">
+            Сохранить
+        </button>
+    </EditForm>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <p class="text-danger mt-2">@errorMessage</p>
+    }
+}
+
+
+@if (requests is null)
+{
+    <p>Загрузка заявок...</p>
+}
+else if (requests.Count == 0)
+{
+    <p>Заявок пока нет.</p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Название</th>
+                <th>Клиент</th>
+                <th>Статус</th>
+                <th>Приоритет</th>
+                <th>Создана</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var request in requests)
+            {
+                <tr>
+                    <td><a href="@($"/requests/{request.Id}")">@request.Title</a></td>
+                    <td>@request.ClientName</td>
+                    <td>@GetStatusName(request.Status)</td>
+                    <td>@GetPriorityName(request.Priority)</td>
+                    <td>@request.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<RequestListItem>? requests;
+    private bool showCreateForm;
+    private string? errorMessage;
+    private List<Client> clients = new();
+    private Request newRequest = new()
+    {
+        Title = string.Empty,
+        Description = string.Empty
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        requests = await RequestService.GetRequestListAsync();
+    }
+
+    private static string GetStatusName(RequestStatus status) => status switch
+    {
+        RequestStatus.New => "Новая",
+        RequestStatus.InProgress => "В работе",
+        RequestStatus.WaitingForClient => "Ожидает клиента",
+        RequestStatus.Completed => "Завершена",
+        RequestStatus.Cancelled => "Отменена",
+        _ => status.ToString()
+    };
+
+    private static string GetPriorityName(RequestPriority priority) => priority switch
+    {
+        RequestPriority.Low => "Низкий",
+        RequestPriority.Normal => "Обычный",
+        RequestPriority.High => "Высокий",
+        RequestPriority.Urgent => "Срочный",
+        _ => priority.ToString()
+    };
+
+    private async Task ToggleCreateForm()
+    {
+        showCreateForm = !showCreateForm;
+        errorMessage = null;
+
+        if (showCreateForm)
+        {
+            clients = await ClientService.GetClientsAsync();
+
+            newRequest = new Request
+            {
+                Title = string.Empty,
+                Description = string.Empty
+            };
+        }
+    }
+
+    private async Task CreateRequestAsync()
+    {
+        errorMessage = null;
+
+        if (newRequest.ClientId <= 0)
+        {
+            errorMessage = "Выберите клиента.";
+            return;
+        }
+
+        var success = await RequestService.AddRequestAsync(newRequest);
+
+        if (!success)
+        {
+            errorMessage = "Не удалось создать заявку. Проверьте данные.";
+            return;
+        }
+
+        requests = await RequestService.GetRequestListAsync();
+
+        newRequest = new Request
+        {
+            Title = string.Empty,
+            Description = string.Empty
+        };
+
+        showCreateForm = false;
+    }
+}
