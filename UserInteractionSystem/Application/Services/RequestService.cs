@@ -86,6 +86,42 @@ public class RequestService
             .ToListAsync();
     }
 
+    public async Task<RequestDashboardItem> GetRequestDashboardAsync()
+    {
+        var statistics = await _dbContext.Requests
+            .GroupBy(_ => 1)
+            .Select(group => new RequestDashboardItem
+            {
+                TotalCount = group.Count(),
+                NewCount = group.Count(request => request.Status == RequestStatus.New),
+                InProgressCount = group.Count(request => request.Status == RequestStatus.InProgress),
+                WaitingForClientCount = group.Count(request => request.Status == RequestStatus.WaitingForClient),
+                CompletedCount = group.Count(request => request.Status == RequestStatus.Completed)
+            })
+            .SingleOrDefaultAsync() ?? new RequestDashboardItem();
+
+        statistics.RecentRequests = await _dbContext.Requests
+            .Join(
+                _dbContext.Clients,
+                request => request.ClientId,
+                client => client.Id,
+                (request, client) => new RequestListItem
+                {
+                    Id = request.Id,
+                    Title = request.Title,
+                    ClientName = client.FullName,
+                    Status = request.Status,
+                    Priority = request.Priority,
+                    CreatedAt = request.CreatedAt
+                })
+            .OrderByDescending(request => request.CreatedAt)
+            .ThenByDescending(request => request.Id)
+            .Take(5)
+            .ToListAsync();
+
+        return statistics;
+    }
+
     public async Task<RequestDetailsItem?> GetRequestByIdAsync(int requestId)
     {
         return await _dbContext.Requests

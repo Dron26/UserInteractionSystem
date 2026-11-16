@@ -1,29 +1,119 @@
 ﻿@page "/"
-@inject UserInteractionSystem.Application.Services.ClientService ClientService
+@using UserInteractionSystem.Application.Models
+@using UserInteractionSystem.Domain.Enums
+@inject UserInteractionSystem.Application.Services.RequestService RequestService
+@rendermode InteractiveServer
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Главная</PageTitle>
 
-<h1>Hello, world!</h1>
+<h1>Панель управления</h1>
+<p class="text-muted">Краткая статистика по заявкам и последние обновления.</p>
 
-@if (clients.Count == 0)
+@if (dashboard is null)
 {
-    <p>Клиенты отсутствуют.</p>
+    <p role="status">Загрузка панели управления...</p>
 }
 else
 {
-    <ul>
-        @foreach (var client in clients)
+    <div class="row row-cols-1 row-cols-sm-2 row-cols-xl-5 g-3 mb-4">
+        <div class="col">
+            <div class="card h-100 border-primary">
+                <div class="card-body">
+                    <h2 class="h6 card-title text-muted">Всего заявок</h2>
+                    <p class="display-6 mb-0">@dashboard.TotalCount</p>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h2 class="h6 card-title text-muted">Новые</h2>
+                    <p class="display-6 mb-0">@dashboard.NewCount</p>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h2 class="h6 card-title text-muted">В работе</h2>
+                    <p class="display-6 mb-0">@dashboard.InProgressCount</p>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h2 class="h6 card-title text-muted">Ожидание клиента</h2>
+                    <p class="display-6 mb-0">@dashboard.WaitingForClientCount</p>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h2 class="h6 card-title text-muted">Завершённые</h2>
+                    <p class="display-6 mb-0">@dashboard.CompletedCount</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <section aria-labelledby="recent-requests-heading">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 id="recent-requests-heading" class="h4 mb-0">Последние заявки</h2>
+            <a class="btn btn-outline-primary btn-sm" href="/requests">Все заявки</a>
+        </div>
+
+        @if (dashboard.RecentRequests.Count == 0)
         {
-            <li>@client.FullName</li>
+            <p class="text-muted">Заявок пока нет.</p>
         }
-    </ul>
+        else
+        {
+            <div class="list-group">
+                @foreach (var request in dashboard.RecentRequests)
+                {
+                    <a class="list-group-item list-group-item-action" href="@($"/requests/{request.Id}")" @key="request.Id">
+                        <div class="d-flex w-100 justify-content-between flex-wrap gap-2">
+                            <h3 class="h6 mb-1">@request.Title</h3>
+                            <small>@request.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</small>
+                        </div>
+                        <div class="d-flex justify-content-between flex-wrap gap-2">
+                            <span class="text-muted">@request.ClientName</span>
+                            <span class="badge @GetStatusBadgeClass(request.Status)">@GetStatusName(request.Status)</span>
+                        </div>
+                    </a>
+                }
+            </div>
+        }
+    </section>
 }
 
 @code {
-    private List<UserInteractionSystem.Domain.Entities.Client> clients = [];
+    private RequestDashboardItem? dashboard;
 
     protected override async Task OnInitializedAsync()
     {
-        clients = await ClientService.GetClientsAsync();
+        dashboard = await RequestService.GetRequestDashboardAsync();
     }
+
+    private static string GetStatusName(RequestStatus status) => status switch
+    {
+        RequestStatus.New => "Новая",
+        RequestStatus.InProgress => "В работе",
+        RequestStatus.WaitingForClient => "Ожидание клиента",
+        RequestStatus.Completed => "Завершена",
+        RequestStatus.Cancelled => "Отменена",
+        _ => status.ToString()
+    };
+
+    private static string GetStatusBadgeClass(RequestStatus status) => status switch
+    {
+        RequestStatus.New => "text-bg-primary",
+        RequestStatus.InProgress => "text-bg-warning",
+        RequestStatus.WaitingForClient => "text-bg-info",
+        RequestStatus.Completed => "text-bg-success",
+        RequestStatus.Cancelled => "text-bg-secondary",
+        _ => "text-bg-secondary"
+    };
 }
