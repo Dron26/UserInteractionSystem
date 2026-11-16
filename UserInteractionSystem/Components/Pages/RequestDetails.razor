@@ -24,7 +24,7 @@ else
             <h2 class="card-title">@request.Title</h2>
             <p class="card-text">@request.Description</p>
 
-            <dl class="row mb-0">
+            <dl class="row mb-4">
                 <dt class="col-sm-4">Клиент</dt>
                 <dd class="col-sm-8">@request.ClientName</dd>
 
@@ -40,6 +40,51 @@ else
                 <dt class="col-sm-4">Последнее изменение</dt>
                 <dd class="col-sm-8">@request.UpdatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</dd>
             </dl>
+
+            <h2 class="h5">Управление заявкой</h2>
+            <EditForm Model="request" OnValidSubmit="SaveChangesAsync">
+                <div class="mb-3">
+                    <label class="form-label" for="request-status">Статус</label>
+                    <InputSelect id="request-status" class="form-select" @bind-Value="request.Status">
+                        @foreach (var status in Enum.GetValues<RequestStatus>())
+                        {
+                            <option value="@status">@GetStatusName(status)</option>
+                        }
+                    </InputSelect>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="request-priority">Приоритет</label>
+                    <InputSelect id="request-priority" class="form-select" @bind-Value="request.Priority">
+                        @foreach (var priority in priorities)
+                        {
+                            <option value="@priority">@GetPriorityName(priority)</option>
+                        }
+                    </InputSelect>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="request-assignee">Ответственный</label>
+                    <InputSelect id="request-assignee" class="form-select" @bind-Value="request.ResponsibleUserId">
+                        <option value="">Не назначен</option>
+                        @foreach (var user in activeUsers)
+                        {
+                            <option value="@user.Id">@user.FullName</option>
+                        }
+                    </InputSelect>
+                </div>
+
+                <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                    @(isSaving ? "Сохранение..." : "Сохранить изменения")
+                </button>
+            </EditForm>
+
+            @if (!string.IsNullOrWhiteSpace(message))
+            {
+                <div class="alert @(saveSucceeded ? "alert-success" : "alert-danger") mt-3" role="alert">
+                    @message
+                </div>
+            }
         </div>
     </div>
 }
@@ -48,18 +93,64 @@ else
     [Parameter]
     public int id { get; set; }
 
+    private static readonly RequestPriority[] priorities =
+    [
+        RequestPriority.Low,
+        RequestPriority.Normal,
+        RequestPriority.High
+    ];
+
     private RequestDetailsItem? request;
+    private List<RequestAssigneeItem> activeUsers = [];
+    private bool isSaving;
+    private bool saveSucceeded;
+    private string? message;
 
     protected override async Task OnParametersSetAsync()
     {
         request = await RequestService.GetRequestByIdAsync(id);
+        activeUsers = await RequestService.GetActiveUsersAsync();
+        message = null;
+    }
+
+    private async Task SaveChangesAsync()
+    {
+        if (request is null)
+        {
+            return;
+        }
+
+        isSaving = true;
+        message = null;
+
+        try
+        {
+            saveSucceeded = await RequestService.UpdateRequestAsync(
+                request.Id,
+                request.Status,
+                request.Priority,
+                request.ResponsibleUserId);
+
+            if (!saveSucceeded)
+            {
+                message = "Не удалось сохранить изменения. Проверьте выбранного ответственного пользователя.";
+                return;
+            }
+
+            request = await RequestService.GetRequestByIdAsync(request.Id);
+            message = "Изменения сохранены.";
+        }
+        finally
+        {
+            isSaving = false;
+        }
     }
 
     private static string GetStatusName(RequestStatus status) => status switch
     {
         RequestStatus.New => "Новая",
         RequestStatus.InProgress => "В работе",
-        RequestStatus.WaitingForClient => "Ожидает клиента",
+        RequestStatus.WaitingForClient => "Ожидание клиента",
         RequestStatus.Completed => "Завершена",
         RequestStatus.Cancelled => "Отменена",
         _ => status.ToString()

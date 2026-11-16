@@ -100,11 +100,74 @@ public class RequestService
                     Title = request.Title,
                     Description = request.Description,
                     ClientName = client.FullName,
+                    ResponsibleUserId = request.ResponsibleUserId,
                     Status = request.Status,
                     Priority = request.Priority,
                     CreatedAt = request.CreatedAt,
                     UpdatedAt = request.UpdatedAt
                 })
             .FirstOrDefaultAsync();
+    }
+
+    public async Task<List<RequestAssigneeItem>> GetActiveUsersAsync()
+    {
+        return await _dbContext.Users
+            .AsNoTracking()
+            .Where(user => user.IsActive)
+            .OrderBy(user => user.FullName)
+            .Select(user => new RequestAssigneeItem
+            {
+                Id = user.Id,
+                FullName = user.FullName
+            })
+            .ToListAsync();
+    }
+
+    public async Task<bool> UpdateRequestAsync(
+        int requestId,
+        RequestStatus status,
+        RequestPriority priority,
+        int? responsibleUserId)
+    {
+        if (!Enum.IsDefined(status) ||
+            priority is not (RequestPriority.Low or RequestPriority.Normal or RequestPriority.High))
+        {
+            return false;
+        }
+
+        var request = await _dbContext.Requests.FindAsync(requestId);
+
+        if (request is null)
+        {
+            return false;
+        }
+
+        if (responsibleUserId.HasValue)
+        {
+            var responsibleUserIsActive = await _dbContext.Users
+                .AnyAsync(user => user.Id == responsibleUserId.Value && user.IsActive);
+
+            if (!responsibleUserIsActive)
+            {
+                return false;
+            }
+        }
+
+        var now = DateTime.UtcNow;
+        if (status == RequestStatus.Completed && request.Status != RequestStatus.Completed)
+        {
+            request.CompletedAt = now;
+        }
+        else if (status != RequestStatus.Completed)
+        {
+            request.CompletedAt = null;
+        }
+
+        request.Status = status;
+        request.Priority = priority;
+        request.ResponsibleUserId = responsibleUserId;
+        request.UpdatedAt = now;
+
+        return await _dbContext.SaveChangesAsync() > 0;
     }
 }
