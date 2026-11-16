@@ -101,6 +101,10 @@ public class RequestService
                     Description = request.Description,
                     ClientName = client.FullName,
                     ResponsibleUserId = request.ResponsibleUserId,
+                    ResponsibleUserName = _dbContext.Users
+                        .Where(user => user.Id == request.ResponsibleUserId)
+                        .Select(user => user.FullName)
+                        .FirstOrDefault(),
                     Status = request.Status,
                     Priority = request.Priority,
                     CreatedAt = request.CreatedAt,
@@ -144,10 +148,12 @@ public class RequestService
 
         if (responsibleUserId.HasValue)
         {
-            var responsibleUserIsActive = await _dbContext.Users
-                .AnyAsync(user => user.Id == responsibleUserId.Value && user.IsActive);
+            var responsibleUserCanBeKept = await _dbContext.Users
+                .AnyAsync(user =>
+                    user.Id == responsibleUserId.Value &&
+                    (user.IsActive || request.ResponsibleUserId == responsibleUserId));
 
-            if (!responsibleUserIsActive)
+            if (!responsibleUserCanBeKept)
             {
                 return false;
             }

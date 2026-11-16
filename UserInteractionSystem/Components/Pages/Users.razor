@@ -1,0 +1,242 @@
+@page "/users"
+@using UserInteractionSystem.Application.Models
+@using UserInteractionSystem.Domain.Enums
+@inject UserInteractionSystem.Application.Services.UserService UserService
+@rendermode InteractiveServer
+
+<PageTitle>Сотрудники</PageTitle>
+
+<h1>Сотрудники</h1>
+
+@if (isFirstUser)
+{
+    <div class="alert alert-info" role="status">
+        Пользователей пока нет. Создайте первого администратора системы.
+    </div>
+}
+
+<section class="card mb-4" aria-labelledby="user-create-heading">
+    <div class="card-header">
+        <h2 id="user-create-heading" class="h5 mb-0">@(isFirstUser ? "Первый администратор" : "Создать пользователя")</h2>
+    </div>
+    <div class="card-body">
+        <EditForm Model="newUser" OnValidSubmit="CreateUserAsync" FormName="user-create-form">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+
+            <div class="mb-3">
+                <label class="form-label" for="user-full-name">ФИО</label>
+                <InputText id="user-full-name" class="form-control" @bind-Value="newUser.FullName" />
+                <ValidationMessage For="@(() => newUser.FullName)" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="user-login">Логин</label>
+                <InputText id="user-login" class="form-control" autocomplete="username" @bind-Value="newUser.UserName" />
+                <ValidationMessage For="@(() => newUser.UserName)" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="user-password">Пароль</label>
+                <InputText id="user-password" class="form-control" type="password" autocomplete="new-password" @bind-Value="newUser.Password" />
+                <div class="form-text">Минимум 8 символов.</div>
+                <ValidationMessage For="@(() => newUser.Password)" />
+            </div>
+
+            @if (isFirstUser)
+            {
+                <input type="hidden" name="Role" value="Admin" />
+                <p class="mb-3"><strong>Роль:</strong> Администратор</p>
+            }
+            else
+            {
+                <div class="mb-3">
+                    <label class="form-label" for="user-role">Роль</label>
+                    <InputSelect id="user-role" class="form-select" @bind-Value="newUser.Role">
+                        <option value="@UserRole.Admin">Администратор</option>
+                        <option value="@UserRole.Employee">Сотрудник</option>
+                    </InputSelect>
+                </div>
+            }
+
+            <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                @(isSaving ? "Сохранение..." : "Создать пользователя")
+            </button>
+        </EditForm>
+
+        @if (!string.IsNullOrWhiteSpace(createMessage))
+        {
+            <div class="alert @(createSucceeded ? "alert-success" : "alert-danger") mt-3 mb-0" role="alert">
+                @createMessage
+            </div>
+        }
+    </div>
+</section>
+
+<h2 class="h4">Список сотрудников</h2>
+@if (users.Count == 0)
+{
+    <p class="text-muted">Список пока пуст.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th scope="col">ФИО</th>
+                    <th scope="col">Логин</th>
+                    <th scope="col">Роль</th>
+                    <th scope="col">Статус</th>
+                    <th scope="col">Создан</th>
+                    <th scope="col">Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in users)
+                {
+                    <tr @key="user.Id">
+                        <td>
+                            <input class="form-control" aria-label="ФИО сотрудника" @bind="user.FullName" />
+                        </td>
+                        <td>
+                            <input class="form-control" aria-label="Логин сотрудника" @bind="user.UserName" />
+                        </td>
+                        <td>@GetRoleName(user.Role)</td>
+                        <td>
+                            <span class="badge @(user.IsActive ? "text-bg-success" : "text-bg-secondary")">
+                                @(user.IsActive ? "Активен" : "Неактивен")
+                            </span>
+                        </td>
+                        <td>@user.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy")</td>
+                        <td>
+                            <div class="d-flex flex-wrap gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => SaveUserAsync(user)" disabled="@isSaving">
+                                    Сохранить
+                                </button>
+                                <button type="button" class="btn btn-sm @(user.IsActive ? "btn-outline-danger" : "btn-outline-success")" @onclick="() => ToggleUserAsync(user)" disabled="@isSaving">
+                                    @(user.IsActive ? "Деактивировать" : "Активировать")
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(listMessage))
+{
+    <div class="alert @(listOperationSucceeded ? "alert-success" : "alert-danger")" role="alert">
+        @listMessage
+    </div>
+}
+
+@code {
+    private List<UserListItem> users = [];
+    private UserCreateModel newUser = new();
+    private bool isFirstUser;
+    private bool isSaving;
+    private bool createSucceeded;
+    private bool listOperationSucceeded;
+    private string? createMessage;
+    private string? listMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsersAsync();
+    }
+
+    private async Task LoadUsersAsync()
+    {
+        users = await UserService.GetUsersAsync();
+        isFirstUser = users.Count == 0;
+        if (isFirstUser)
+        {
+            newUser.Role = UserRole.Admin;
+        }
+    }
+
+    private async Task CreateUserAsync()
+    {
+        isSaving = true;
+        createMessage = null;
+
+        try
+        {
+            if (isFirstUser)
+            {
+                newUser.Role = UserRole.Admin;
+            }
+
+            createSucceeded = await UserService.AddUserAsync(newUser);
+            if (!createSucceeded)
+            {
+                createMessage = "Не удалось создать пользователя. Проверьте данные: логин должен быть уникальным, а пароль — содержать не менее 8 символов.";
+                return;
+            }
+
+            createMessage = isFirstUser
+                ? "Первый администратор создан."
+                : "Пользователь создан.";
+            newUser = new UserCreateModel { Role = UserRole.Employee };
+            await LoadUsersAsync();
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task SaveUserAsync(UserListItem user)
+    {
+        isSaving = true;
+        listMessage = null;
+
+        try
+        {
+            listOperationSucceeded = await UserService.UpdateUserAsync(user.Id, user.FullName, user.UserName);
+            listMessage = listOperationSucceeded
+                ? "Данные пользователя сохранены."
+                : "Не удалось сохранить данные. Проверьте ФИО, длину логина и его уникальность.";
+            if (listOperationSucceeded)
+            {
+                await LoadUsersAsync();
+            }
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task ToggleUserAsync(UserListItem user)
+    {
+        isSaving = true;
+        listMessage = null;
+
+        try
+        {
+            listOperationSucceeded = await UserService.SetUserActiveAsync(user.Id, !user.IsActive);
+            listMessage = listOperationSucceeded
+                ? user.IsActive ? "Пользователь деактивирован. Связанные заявки и взаимодействия сохранены." : "Пользователь активирован."
+                : "Не удалось изменить статус пользователя.";
+            if (listOperationSucceeded)
+            {
+                await LoadUsersAsync();
+            }
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private static string GetRoleName(UserRole role) => role switch
+    {
+        UserRole.Admin => "Администратор",
+        UserRole.Employee => "Сотрудник",
+        _ => role.ToString()
+    };
+}

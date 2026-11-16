@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using UserInteractionSystem.Application.Services;
 using UserInteractionSystem.Components;
+using UserInteractionSystem.Domain.Entities;
 using UserInteractionSystem.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -27,6 +29,9 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlite(sqliteConnectionString.ConnectionString));
 builder.Services.AddScoped<ClientService>();
 builder.Services.AddScoped<RequestService>();
+builder.Services.AddScoped<InteractionService>();
+builder.Services.AddScoped<UserService>();
+builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();

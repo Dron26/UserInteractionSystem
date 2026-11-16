@@ -1,7 +1,10 @@
 @page "/requests/{id:int}"
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Components.Forms
 @using UserInteractionSystem.Application.Models
 @using UserInteractionSystem.Domain.Enums
 @inject UserInteractionSystem.Application.Services.RequestService RequestService
+@inject UserInteractionSystem.Application.Services.InteractionService InteractionService
 @rendermode InteractiveServer
 
 <PageTitle>@(request is null ? "Заявка не найдена" : $"Заявка №{request.Id}")</PageTitle>
@@ -67,6 +70,10 @@ else
                     <label class="form-label" for="request-assignee">Ответственный</label>
                     <InputSelect id="request-assignee" class="form-select" @bind-Value="request.ResponsibleUserId">
                         <option value="">Не назначен</option>
+                        @if (request.ResponsibleUserId.HasValue && !activeUsers.Any(user => user.Id == request.ResponsibleUserId.Value))
+                        {
+                            <option value="@request.ResponsibleUserId" disabled>@request.ResponsibleUserName (неактивен, текущее назначение)</option>
+                        }
                         @foreach (var user in activeUsers)
                         {
                             <option value="@user.Id">@user.FullName</option>
@@ -85,6 +92,89 @@ else
                     @message
                 </div>
             }
+
+            <hr class="my-4" />
+            <section aria-labelledby="interaction-history-heading">
+                <h2 id="interaction-history-heading" class="h5">История взаимодействий</h2>
+
+                <EditForm Model="interactionForm" OnValidSubmit="AddInteractionAsync">
+                    <DataAnnotationsValidator />
+                    <div class="mb-3">
+                        <label class="form-label" for="interaction-user">Сотрудник, зарегистрировавший взаимодействие</label>
+                        <InputSelect id="interaction-user" class="form-select" @bind-Value="interactionForm.UserId" required>
+                            <option value="">Выберите сотрудника</option>
+                            @foreach (var user in interactionUsers)
+                            {
+                                <option value="@user.Id">@user.FullName</option>
+                            }
+                        </InputSelect>
+                        <ValidationMessage For="@(() => interactionForm.UserId)" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="interaction-channel">Канал</label>
+                        <InputSelect id="interaction-channel" class="form-select" @bind-Value="interactionForm.Channel">
+                            @foreach (var channel in Enum.GetValues<InteractionChannel>())
+                            {
+                                <option value="@channel">@GetChannelName(channel)</option>
+                            }
+                        </InputSelect>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="interaction-contacted-at">Дата и время контакта</label>
+                        <InputDate id="interaction-contacted-at" class="form-control" Type="InputDateType.DateTimeLocal" @bind-Value="interactionForm.ContactedAt" />
+                        <ValidationMessage For="@(() => interactionForm.ContactedAt)" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="interaction-content">Содержание взаимодействия</label>
+                        <InputTextArea id="interaction-content" class="form-control" rows="3" @bind-Value="interactionForm.Content" />
+                        <ValidationMessage For="@(() => interactionForm.Content)" />
+                    </div>
+
+                    @if (interactionUsers.Count == 0)
+                    {
+                        <div class="alert alert-warning" role="alert">
+                            Нет активных сотрудников, которые могут зарегистрировать взаимодействие.
+                        </div>
+                    }
+
+                    <button type="submit" class="btn btn-primary" disabled="@(isAddingInteraction || interactionUsers.Count == 0)">
+                        @(isAddingInteraction ? "Сохранение..." : "Добавить взаимодействие")
+                    </button>
+                </EditForm>
+
+                @if (!string.IsNullOrWhiteSpace(interactionMessage))
+                {
+                    <div class="alert @(interactionSaveSucceeded ? "alert-success" : "alert-danger") mt-3" role="alert">
+                        @interactionMessage
+                    </div>
+                }
+
+                @if (interactions.Count == 0)
+                {
+                    <p class="text-muted mt-3 mb-0">История взаимодействий пока пуста.</p>
+                }
+                else
+                {
+                    <div class="list-group mt-3">
+                        @foreach (var interaction in interactions)
+                        {
+                            <article class="list-group-item" @key="interaction.Id">
+                                <div class="d-flex justify-content-between flex-wrap gap-2">
+                                    <strong>@GetChannelName(interaction.Channel)</strong>
+                                    <time datetime="@interaction.CreatedAt.ToString("O")">
+                                        @interaction.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+                                    </time>
+                                </div>
+                                <div class="small text-muted mb-2">Зарегистрировал(а): @interaction.UserName</div>
+                                <p class="mb-0">@interaction.Content</p>
+                            </article>
+                        }
+                    </div>
+                }
+            </section>
         </div>
     </div>
 }
@@ -102,15 +192,27 @@ else
 
     private RequestDetailsItem? request;
     private List<RequestAssigneeItem> activeUsers = [];
+    private List<InteractionHistoryItem> interactions = [];
+    private List<InteractionUserItem> interactionUsers = [];
+    private InteractionFormModel interactionForm = CreateInteractionForm();
     private bool isSaving;
     private bool saveSucceeded;
     private string? message;
+    private bool isAddingInteraction;
+    private bool interactionSaveSucceeded;
+    private string? interactionMessage;
 
     protected override async Task OnParametersSetAsync()
     {
         request = await RequestService.GetRequestByIdAsync(id);
         activeUsers = await RequestService.GetActiveUsersAsync();
+        interactionUsers = await InteractionService.GetActiveUsersAsync();
+        interactions = request is null
+            ? []
+            : await InteractionService.GetInteractionsByRequestIdAsync(request.Id);
+        interactionForm = CreateInteractionForm();
         message = null;
+        interactionMessage = null;
     }
 
     private async Task SaveChangesAsync()
@@ -146,6 +248,57 @@ else
         }
     }
 
+    private async Task AddInteractionAsync()
+    {
+        if (request is null)
+        {
+            return;
+        }
+
+        isAddingInteraction = true;
+        interactionMessage = null;
+
+        try
+        {
+            interactionSaveSucceeded = await InteractionService.AddInteractionAsync(
+                request.Id,
+                interactionForm.UserId,
+                interactionForm.Channel,
+                interactionForm.Content,
+                interactionForm.ContactedAt);
+
+            if (!interactionSaveSucceeded)
+            {
+                interactionMessage = "Не удалось добавить взаимодействие. Проверьте данные и выбранного активного сотрудника.";
+                return;
+            }
+
+            interactions = await InteractionService.GetInteractionsByRequestIdAsync(request.Id);
+            interactionForm = CreateInteractionForm();
+            interactionMessage = "Взаимодействие добавлено.";
+        }
+        finally
+        {
+            isAddingInteraction = false;
+        }
+    }
+
+    private static InteractionFormModel CreateInteractionForm() => new()
+    {
+        ContactedAt = DateTime.Now
+    };
+
+    private static string GetChannelName(InteractionChannel channel) => channel switch
+    {
+        InteractionChannel.Phone => "Телефон",
+        InteractionChannel.Email => "Электронная почта",
+        InteractionChannel.Telegram => "Telegram",
+        InteractionChannel.WhatsApp => "WhatsApp",
+        InteractionChannel.Website => "Сайт",
+        InteractionChannel.Other => "Другое",
+        _ => channel.ToString()
+    };
+
     private static string GetStatusName(RequestStatus status) => status switch
     {
         RequestStatus.New => "Новая",
@@ -164,4 +317,18 @@ else
         RequestPriority.Urgent => "Срочный",
         _ => priority.ToString()
     };
+
+    private sealed class InteractionFormModel
+    {
+        [Required(ErrorMessage = "Выберите сотрудника, зарегистрировавшего взаимодействие.")]
+        public int? UserId { get; set; }
+
+        public InteractionChannel Channel { get; set; } = InteractionChannel.Phone;
+
+        [Required(ErrorMessage = "Укажите дату и время контакта.")]
+        public DateTime? ContactedAt { get; set; }
+
+        [Required(ErrorMessage = "Укажите содержание взаимодействия.")]
+        public string? Content { get; set; }
+    }
 }
