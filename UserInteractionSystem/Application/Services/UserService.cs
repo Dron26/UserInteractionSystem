@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using UserInteractionSystem.Application.Models;
@@ -28,7 +29,62 @@ public class UserService
 
     public async Task<bool> IsAuthenticatedUserCurrentAsync(
         ClaimsPrincipal? principal,
-        UserRole? requiredRole = null)
+        UserRole? requiredRole = null,
+        bool allowPendingPasswordChange = false)
+    {
+        var roleClaim = principal?.FindFirst(ClaimTypes.Role)?.Value;
+        var mustChangePasswordClaim = principal?.FindFirst("MustChangePassword")?.Value;
+        if (principal?.Identity?.IsAuthenticated != true ||
+            !int.TryParse(
+                principal.FindFirst("UserId")?.Value,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var userId) ||
+            userId <= 0 ||
+            !Enum.TryParse<UserRole>(roleClaim, ignoreCase: false, out var claimedRole) ||
+            !Enum.IsDefined(claimedRole) ||
+            roleClaim != claimedRole.ToString() ||
+            (mustChangePasswordClaim is not null &&
+                !bool.TryParse(mustChangePasswordClaim, out _)))
+        {
+            return false;
+        }
+
+        if (requiredRole is not null && claimedRole != requiredRole)
+        {
+            return false;
+        }
+
+        var user = await _dbContext.Users
+            .AsNoTracking()
+            .Where(candidate => candidate.Id == userId)
+            .Select(candidate => new
+            {
+                candidate.IsActive,
+                candidate.Role,
+                candidate.MustChangePassword,
+                candidate.TemporaryPasswordExpiresAtUtc
+            })
+            .FirstOrDefaultAsync();
+
+        if (user is null || !user.IsActive || user.Role != claimedRole)
+        {
+            return false;
+        }
+
+        var claimedMustChangePassword = mustChangePasswordClaim is not null &&
+            bool.Parse(mustChangePasswordClaim);
+        if (claimedMustChangePassword != user.MustChangePassword)
+        {
+            return false;
+        }
+
+        return (!user.MustChangePassword || allowPendingPasswordChange) &&
+            (!user.MustChangePassword ||
+                user.TemporaryPasswordExpiresAtUtc is DateTime expiresAt && expiresAt > DateTime.UtcNow);
+    }
+
+    public async Task<bool?> GetPasswordChangeRequirementAsync(ClaimsPrincipal? principal)
     {
         var roleClaim = principal?.FindFirst(ClaimTypes.Role)?.Value;
         if (principal?.Identity?.IsAuthenticated != true ||
@@ -42,16 +98,34 @@ public class UserService
             !Enum.IsDefined(claimedRole) ||
             roleClaim != claimedRole.ToString())
         {
+            return null;
+        }
+
+        var user = await _dbContext.Users
+            .AsNoTracking()
+            .Where(candidate => candidate.Id == userId)
+            .Select(candidate => new
+            {
+                candidate.IsActive,
+                candidate.Role,
+                candidate.MustChangePassword,
+                candidate.TemporaryPasswordExpiresAtUtc
+            })
+            .FirstOrDefaultAsync();
+
+        if (user is null || !user.IsActive || user.Role != claimedRole)
+        {
+            return null;
+        }
+
+        if (!user.MustChangePassword)
+        {
             return false;
         }
 
-        return (requiredRole is null || claimedRole == requiredRole) &&
-            await _dbContext.Users
-                .AsNoTracking()
-                .AnyAsync(user =>
-                    user.Id == userId &&
-                    user.IsActive &&
-                    user.Role == claimedRole);
+        return user.TemporaryPasswordExpiresAtUtc is DateTime expiresAt && expiresAt > DateTime.UtcNow
+            ? true
+            : null;
     }
 
     public async Task<bool> CreateInitialAdministratorAsync(
@@ -123,7 +197,10 @@ public class UserService
             return null;
         }
 
-        if (verificationResult == PasswordVerificationResult.Failed || !user.IsActive)
+        if (verificationResult == PasswordVerificationResult.Failed || !user.IsActive ||
+            (user.MustChangePassword &&
+                (user.TemporaryPasswordExpiresAtUtc is not DateTime temporaryExpiry ||
+                    temporaryExpiry <= DateTime.UtcNow)))
         {
             return null;
         }
@@ -140,7 +217,96 @@ public class UserService
         {
             Id = user.Id,
             UserName = user.UserName,
-            Role = user.Role
+            Role = user.Role,
+            MustChangePassword = user.MustChangePassword
+        };
+    }
+
+    public async Task<string?> ResetUserPasswordAsync(int userId, ClaimsPrincipal? currentUser)
+    {
+        var currentUserIdValue = currentUser?.FindFirst("UserId")?.Value;
+        if (userId <= 0 ||
+            !int.TryParse(currentUserIdValue, NumberStyles.None, CultureInfo.InvariantCulture, out var currentUserId) ||
+            userId == currentUserId ||
+            !await IsAuthenticatedUserCurrentAsync(currentUser, UserRole.Admin))
+        {
+            return null;
+        }
+
+        var user = await _dbContext.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(candidate => candidate.Id == userId && candidate.IsActive);
+        if (user is null)
+        {
+            return null;
+        }
+
+        var temporaryPassword = Convert.ToBase64String(RandomNumberGenerator.GetBytes(18))
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+        var passwordHash = _passwordHasher.HashPassword(user, temporaryPassword);
+        var expiresAtUtc = DateTime.UtcNow.AddMinutes(15);
+
+        if (!await IsAuthenticatedUserCurrentAsync(currentUser, UserRole.Admin))
+        {
+            return null;
+        }
+
+        var updatedRows = await _dbContext.Users
+            .Where(candidate => candidate.Id == userId && candidate.IsActive)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(candidate => candidate.PasswordHash, passwordHash)
+                .SetProperty(candidate => candidate.MustChangePassword, true)
+                .SetProperty(candidate => candidate.TemporaryPasswordExpiresAtUtc, expiresAtUtc));
+
+        return updatedRows == 1 ? temporaryPassword : null;
+    }
+
+    public async Task<AuthenticatedUserItem?> ChangePasswordAsync(
+        ClaimsPrincipal? currentUser,
+        string? newPassword,
+        string? confirmPassword)
+    {
+        if (string.IsNullOrEmpty(newPassword) ||
+            newPassword.Length < 8 ||
+            !string.Equals(newPassword, confirmPassword, StringComparison.Ordinal) ||
+            !await IsAuthenticatedUserCurrentAsync(currentUser, allowPendingPasswordChange: true))
+        {
+            return null;
+        }
+
+        var userIdValue = currentUser?.FindFirst("UserId")?.Value;
+        if (!int.TryParse(userIdValue, NumberStyles.None, CultureInfo.InvariantCulture, out var userId))
+        {
+            return null;
+        }
+
+        var user = await _dbContext.Users.FindAsync(userId);
+        if (user is null ||
+            !user.MustChangePassword ||
+            user.TemporaryPasswordExpiresAtUtc is not DateTime expiresAt ||
+            expiresAt <= DateTime.UtcNow ||
+            !await IsAuthenticatedUserCurrentAsync(currentUser, allowPendingPasswordChange: true))
+        {
+            return null;
+        }
+
+        user.PasswordHash = _passwordHasher.HashPassword(user, newPassword);
+        user.MustChangePassword = false;
+        user.TemporaryPasswordExpiresAtUtc = null;
+
+        if (await _dbContext.SaveChangesAsync() == 0)
+        {
+            return null;
+        }
+
+        return new AuthenticatedUserItem
+        {
+            Id = user.Id,
+            UserName = user.UserName,
+            Role = user.Role,
+            MustChangePassword = false
         };
     }
 

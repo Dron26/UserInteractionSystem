@@ -1,7 +1,51 @@
 @inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject UserInteractionSystem.Application.Services.UserService UserService
+@inject NavigationManager Navigation
 
-<div class="container min-vh-100 d-flex align-items-center justify-content-center py-4">
-    <main class="w-100">
-        @Body
-    </main>
-</div>
+<AuthorizeView Context="authState">
+    <Authorized>
+        @if (mustChangePassword != false && !IsPasswordChangeOrLogoutPage)
+        {
+            <RedirectToPasswordChange />
+        }
+        else
+        {
+            <div class="container min-vh-100 d-flex align-items-center justify-content-center py-4">
+                <main class="w-100">
+                    @Body
+                </main>
+            </div>
+        }
+    </Authorized>
+    <NotAuthorized>
+        <div class="container min-vh-100 d-flex align-items-center justify-content-center py-4">
+            <main class="w-100">
+                @Body
+            </main>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private bool? mustChangePassword;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        mustChangePassword = await UserService.GetPasswordChangeRequirementAsync(authenticationState.User);
+    }
+
+    private bool IsPasswordChangeOrLogoutPage
+    {
+        get
+        {
+            var relativePath = Navigation.ToBaseRelativePath(Navigation.Uri)
+                .Split('?', '#')[0]
+                .Trim('/');
+            return relativePath.Equals("change-password", StringComparison.OrdinalIgnoreCase) ||
+                relativePath.Equals("logout", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+}

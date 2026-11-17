@@ -9,4 +9,6 @@ public class AuthenticatedUserItem
     public string UserName { get; set; } = string.Empty;
 
     public UserRole Role { get; set; }
+
+    public bool MustChangePassword { get; set; }
 }

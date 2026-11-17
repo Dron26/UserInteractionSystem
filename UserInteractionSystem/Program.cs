@@ -55,7 +55,9 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.Events.OnValidatePrincipal = async context =>
         {
             var userService = context.HttpContext.RequestServices.GetRequiredService<UserService>();
-            if (await userService.IsAuthenticatedUserCurrentAsync(context.Principal))
+            if (await userService.IsAuthenticatedUserCurrentAsync(
+                context.Principal,
+                allowPendingPasswordChange: true))
             {
                 return;
             }
@@ -73,6 +75,8 @@ builder.Services.AddRazorComponents()
 builder.Services.AddScoped<AuthenticationStateProvider, UserRevalidatingAuthenticationStateProvider>();
 
 var app = builder.Build();
+
+
 
 using (var scope = app.Services.CreateScope())
 {
@@ -116,7 +120,48 @@ app.MapPost("/account/login", async (
     {
         new Claim("UserId", authenticatedUser.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
         new Claim("UserName", authenticatedUser.UserName),
-        new Claim(ClaimTypes.Role, authenticatedUser.Role.ToString())
+        new Claim(ClaimTypes.Role, authenticatedUser.Role.ToString()),
+        new Claim("MustChangePassword", authenticatedUser.MustChangePassword.ToString())
+    };
+    var identity = new ClaimsIdentity(
+        claims,
+        CookieAuthenticationDefaults.AuthenticationScheme,
+        "UserName",
+        ClaimTypes.Role);
+    await context.SignInAsync(
+        CookieAuthenticationDefaults.AuthenticationScheme,
+        new ClaimsPrincipal(identity));
+
+    return Results.Redirect(authenticatedUser.MustChangePassword ? "/change-password" : "/");
+}).AllowAnonymous();
+
+app.MapPost("/account/change-password", async (
+    HttpContext context,
+    IAntiforgery antiforgery,
+    UserService userService) =>
+{
+    if (!await IsValidAntiforgeryRequestAsync(context, antiforgery))
+    {
+        return Results.BadRequest();
+    }
+
+    var form = await context.Request.ReadFormAsync();
+    var updatedUser = await userService.ChangePasswordAsync(
+        context.User,
+        form["newPassword"],
+        form["confirmPassword"]);
+
+    if (updatedUser is null)
+    {
+        return Results.Redirect("/change-password?error=true");
+    }
+
+    var claims = new[]
+    {
+        new Claim("UserId", updatedUser.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        new Claim("UserName", updatedUser.UserName),
+        new Claim(ClaimTypes.Role, updatedUser.Role.ToString()),
+        new Claim("MustChangePassword", updatedUser.MustChangePassword.ToString())
     };
     var identity = new ClaimsIdentity(
         claims,
@@ -128,7 +173,7 @@ app.MapPost("/account/login", async (
         new ClaimsPrincipal(identity));
 
     return Results.Redirect("/");
-}).AllowAnonymous();
+}).RequireAuthorization();
 
 app.MapPost("/account/logout", async (HttpContext context, IAntiforgery antiforgery) =>
 {

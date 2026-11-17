@@ -1,23 +1,50 @@
 ﻿@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject UserInteractionSystem.Application.Services.UserService UserService
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu />
-    </div>
+<AuthorizeView Context="authState">
+    <Authorized>
+        @if (mustChangePassword != false)
+        {
+            <RedirectToPasswordChange />
+        }
+        else
+        {
+            <div class="page">
+                <div class="sidebar">
+                    <NavMenu />
+                </div>
 
-    <main>
-        <div class="top-row px-4">
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
-        </div>
+                <main>
+                    <div class="top-row px-4">
+                        <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+                    </div>
 
-        <article class="content px-4">
-            @Body
-        </article>
-    </main>
-</div>
+                    <article class="content px-4">
+                        @Body
+                    </article>
+                </main>
+            </div>
 
-<div id="blazor-error-ui">
-    An unhandled error has occurred.
-    <a href="" class="reload">Reload</a>
-    <a class="dismiss">🗙</a>
-</div>
+            <div id="blazor-error-ui">
+                An unhandled error has occurred.
+                <a href="" class="reload">Reload</a>
+                <a class="dismiss">🗙</a>
+            </div>
+        }
+    </Authorized>
+    <NotAuthorized>
+        @Body
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private bool? mustChangePassword;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        mustChangePassword = await UserService.GetPasswordChangeRequirementAsync(authenticationState.User);
+    }
+}

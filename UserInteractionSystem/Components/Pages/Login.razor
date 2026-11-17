@@ -1,8 +1,10 @@
 @page "/login"
 @layout UserInteractionSystem.Components.Layout.AccountLayout
 @using Microsoft.AspNetCore.Antiforgery
+@using Microsoft.AspNetCore.Components.Authorization
 @inject IHttpContextAccessor HttpContextAccessor
 @inject IAntiforgery Antiforgery
+@inject AuthenticationStateProvider AuthenticationStateProvider
 @inject NavigationManager Navigation
 @inject UserInteractionSystem.Application.Services.UserService UserService
 
@@ -20,13 +22,13 @@
                     @if (sessionInvalid)
                     {
                         <div class="alert alert-warning" role="alert">
-                            Сеанс завершён: учётная запись отключена или её роль изменилась. Войдите снова.
+                            Сеанс завершён: учётная запись отключена, роль изменилась или истёк срок временного пароля. Войдите снова.
                         </div>
                     }
                     @if (error)
                     {
                         <div class="alert alert-danger" role="alert">
-                            Не удалось выполнить вход. Проверьте логин и пароль, а также активность учётной записи.
+                            Не удалось выполнить вход. Проверьте логин и пароль, активность учётной записи и срок действия временного пароля.
                         </div>
                     }
                     @if (loggedOut)
@@ -101,9 +103,15 @@
     {
         hasAdministrator = await UserService.HasAdministratorAsync();
 
-        if (HttpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true)
+        var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (authenticationState.User.Identity?.IsAuthenticated == true)
         {
-            Navigation.NavigateTo("/", forceLoad: true);
+            var passwordChangeRequired = await UserService.GetPasswordChangeRequirementAsync(authenticationState.User);
+            if (passwordChangeRequired is bool mustChangePassword)
+            {
+                var destination = mustChangePassword ? "/change-password" : "/";
+                Navigation.NavigateTo(destination, forceLoad: true);
+            }
         }
     }
 }

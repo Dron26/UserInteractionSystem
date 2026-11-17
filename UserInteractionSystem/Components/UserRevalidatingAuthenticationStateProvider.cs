@@ -36,7 +36,9 @@ public sealed class UserRevalidatingAuthenticationStateProvider : RevalidatingSe
         {
             await using var scope = _scopeFactory.CreateAsyncScope();
             var userService = scope.ServiceProvider.GetRequiredService<UserService>();
-            var isCurrent = await userService.IsAuthenticatedUserCurrentAsync(authenticationState.User);
+            var isCurrent = await userService.IsAuthenticatedUserCurrentAsync(
+                authenticationState.User,
+                allowPendingPasswordChange: true);
             if (!isCurrent)
             {
                 SessionWasInvalidated = true;

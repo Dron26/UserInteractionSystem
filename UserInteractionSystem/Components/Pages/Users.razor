@@ -1,10 +1,12 @@
 @page "/users"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.JSInterop
 @using UserInteractionSystem.Application.Models
 @using UserInteractionSystem.Domain.Enums
 @inject UserInteractionSystem.Application.Services.UserService UserService
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IJSRuntime JSRuntime
 @rendermode InteractiveServer
 
 <PageTitle>Сотрудники</PageTitle>
@@ -120,6 +122,9 @@ else
                                 <button type="button" class="btn btn-sm @(user.IsActive ? "btn-outline-danger" : "btn-outline-success")" @onclick="() => ToggleUserAsync(user)" disabled="@isSaving">
                                     @(user.IsActive ? "Деактивировать" : "Активировать")
                                 </button>
+                                <button type="button" class="btn btn-sm btn-outline-warning" @onclick="() => ResetPasswordAsync(user)" disabled="@(isSaving || user.Id == currentUserId || !user.IsActive)" title="@(user.Id == currentUserId ? "Нельзя сбросить собственный пароль" : !user.IsActive ? "Нельзя сбросить пароль неактивного пользователя" : null)">
+                                    Сбросить пароль
+                                </button>
                             </div>
                         </td>
                     </tr>
@@ -136,18 +141,40 @@ else
     </div>
 }
 
+@if (!string.IsNullOrWhiteSpace(temporaryPassword))
+{
+    <div class="alert alert-warning" role="alert">
+        <p>Временный пароль для @temporaryPasswordUserName. Он действует 15 минут и будет показан только сейчас:</p>
+        <code id="temporary-password">@temporaryPassword</code>
+        <div class="mt-2 d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-dark" @onclick="CopyTemporaryPasswordAsync">Копировать пароль</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="DismissTemporaryPassword">Скрыть пароль</button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(copyMessage))
+        {
+            <div class="mt-2" role="status">@copyMessage</div>
+        }
+    </div>
+}
+
 @code {
     private List<UserListItem> users = [];
     private UserCreateModel newUser = new();
     private bool isFirstUser;
     private bool isSaving;
+    private int currentUserId;
     private bool createSucceeded;
     private bool listOperationSucceeded;
     private string? createMessage;
     private string? listMessage;
+    private string? temporaryPassword;
+    private string? temporaryPasswordUserName;
+    private string? copyMessage;
 
     protected override async Task OnInitializedAsync()
     {
+        var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        int.TryParse(authenticationState.User.FindFirst("UserId")?.Value, out currentUserId);
         await LoadUsersAsync();
     }
 
@@ -244,6 +271,60 @@ else
         {
             isSaving = false;
         }
+    }
+
+    private async Task ResetPasswordAsync(UserListItem user)
+    {
+        isSaving = true;
+        temporaryPassword = null;
+        temporaryPasswordUserName = null;
+        copyMessage = null;
+        listMessage = null;
+
+        try
+        {
+            var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            temporaryPassword = await UserService.ResetUserPasswordAsync(user.Id, authenticationState.User);
+            listOperationSucceeded = temporaryPassword is not null;
+            if (listOperationSucceeded)
+            {
+                temporaryPasswordUserName = user.UserName;
+                listMessage = "Временный пароль создан. Передайте его сотруднику безопасным способом.";
+            }
+            else
+            {
+                listMessage = "Не удалось сбросить пароль. Проверьте, что вы администратор, цель — другой активный пользователь, и ваша учётная запись актуальна.";
+            }
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task CopyTemporaryPasswordAsync()
+    {
+        if (temporaryPassword is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", temporaryPassword);
+            copyMessage = "Пароль скопирован.";
+        }
+        catch (JSException)
+        {
+            copyMessage = "Не удалось скопировать пароль. Скопируйте его вручную.";
+        }
+    }
+
+    private void DismissTemporaryPassword()
+    {
+        temporaryPassword = null;
+        temporaryPasswordUserName = null;
+        copyMessage = null;
     }
 
     private static string GetRoleName(UserRole role) => role switch
