@@ -1,6 +1,7 @@
 @page "/clients"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using Microsoft.AspNetCore.Components.Authorization
+@using UserInteractionSystem.Application.Models
 @inject UserInteractionSystem.Application.Services.ClientService ClientService
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @using UserInteractionSystem.Domain.Entities
@@ -9,35 +10,42 @@
 <PageTitle>Клиенты</PageTitle>
 
 <h1>Клиенты</h1>
-<EditForm Model="newClient" OnValidSubmit="AddClient" FormName="client-form">
-    
-    <DataAnnotationsValidator />
-    <ValidationSummary />
-
-    <div>
-        <label>ФИО</label>
-        <InputText @bind-Value="newClient.FullName" />
-        <ValidationMessage For="@(() => newClient.FullName)" />
+<section class="card client-create-panel mb-4" aria-labelledby="client-create-heading">
+    <div class="card-header">
+        <h2 id="client-create-heading" class="h5 mb-0">&#1044;&#1086;&#1073;&#1072;&#1074;&#1080;&#1090;&#1100; &#1082;&#1083;&#1080;&#1077;&#1085;&#1090;&#1072;</h2>
     </div>
+    <div class="card-body">
+        <EditForm Model="newClient" OnValidSubmit="AddClient" FormName="client-form" class="client-create-form">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="validation-summary" />
 
-    <div>
-        <label>Телефон</label>
-        <InputText @bind-Value="newClient.Phone" />
+            <div class="mb-3">
+                <label class="form-label" for="new-client-full-name">&#1060;&#1048;&#1054; <span class="text-danger" aria-hidden="true">*</span></label>
+                <InputText id="new-client-full-name" class="form-control" @bind-Value="newClient.FullName" />
+                <ValidationMessage For="@(() => newClient.FullName)" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="new-client-phone">&#1058;&#1077;&#1083;&#1077;&#1092;&#1086;&#1085;</label>
+                <InputText id="new-client-phone" class="form-control" @bind-Value="newClient.Phone" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="new-client-email">Email</label>
+                <InputText id="new-client-email" class="form-control" @bind-Value="newClient.Email" />
+                <ValidationMessage For="@(() => newClient.Email)" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label" for="new-client-comment">&#1050;&#1086;&#1084;&#1084;&#1077;&#1085;&#1090;&#1072;&#1088;&#1080;&#1081;</label>
+                <InputTextArea id="new-client-comment" class="form-control" @bind-Value="newClient.Comment" />
+            </div>
+
+            <button type="submit" class="btn btn-primary me-2">&#1044;&#1086;&#1073;&#1072;&#1074;&#1080;&#1090;&#1100; &#1082;&#1083;&#1080;&#1077;&#1085;&#1090;&#1072;</button>
+            <a class="btn btn-outline-secondary" href="/clients">&#1054;&#1090;&#1084;&#1077;&#1085;&#1072;</a>
+        </EditForm>
     </div>
-
-    <div>
-        <label>Email</label>
-        <InputText @bind-Value="newClient.Email" />
-        <ValidationMessage For="@(() => newClient.Email)" />
-    </div>
-
-    <div>
-        <label>Комментарий</label>
-        <InputTextArea @bind-Value="newClient.Comment" />
-    </div>
-
-    <button type="submit">Добавить клиента</button>
-</EditForm>
+</section>
 
 @if (!string.IsNullOrWhiteSpace(operationMessage))
 {
@@ -46,44 +54,140 @@
     </div>
 }
 
-<div>
-    <label for="client-search">Поиск по имени</label>
-    <input id="client-search" type="text" placeholder="Поиск по имени" @bind="searchText" @bind:event="oninput" />
-</div>
+<section class="card client-filter-panel mb-4" aria-label="Поиск клиентов">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <h2 class="h5 mb-0">&#1060;&#1080;&#1083;&#1100;&#1090;&#1088;&#1099; &#1082;&#1083;&#1080;&#1077;&#1085;&#1090;&#1086;&#1074;</h2>
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ResetFiltersAsync">&#1057;&#1073;&#1088;&#1086;&#1089;&#1080;&#1090;&#1100; &#1092;&#1080;&#1083;&#1100;&#1090;&#1088;&#1099;</button>
+        </div>
+        <div class="row g-3">
+            <div class="col-12 col-md-6 col-xl-3">
+                <label class="form-label client-filter-label" for="client-name-filter">ФИО</label>
+                <input id="client-name-filter" class="form-control" type="search" placeholder="Поиск по ФИО"
+                       @bind="filter.FullName" @bind:event="oninput" @bind:after="ApplyFiltersAsync" />
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <label class="form-label client-filter-label" for="client-phone-filter">Телефон</label>
+                <input id="client-phone-filter" class="form-control" type="search" placeholder="Поиск по телефону"
+                       @bind="filter.Phone" @bind:event="oninput" @bind:after="ApplyFiltersAsync" />
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <label class="form-label client-filter-label" for="client-email-filter">Email</label>
+                <input id="client-email-filter" class="form-control" type="search" placeholder="Поиск по email"
+                       @bind="filter.Email" @bind:event="oninput" @bind:after="ApplyFiltersAsync" />
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <label class="form-label client-filter-label" for="client-comment-filter">Комментарий</label>
+                <input id="client-comment-filter" class="form-control" type="search" placeholder="Поиск в комментариях"
+                       @bind="filter.Comment" @bind:event="oninput" @bind:after="ApplyFiltersAsync" />
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <label class="form-label client-filter-label" for="client-period-filter">Дата создания</label>
+                <select id="client-period-filter" class="form-select" @bind="filter.Period" @bind:after="ApplyFiltersAsync">
+                    <option value="@ClientDatePeriod.AllTime">Всё время</option>
+                    <option value="@ClientDatePeriod.Today">Сегодня</option>
+                    <option value="@ClientDatePeriod.LastWeek">Последняя неделя</option>
+                    <option value="@ClientDatePeriod.LastMonth">Последний месяц</option>
+                    <option value="@ClientDatePeriod.Custom">Произвольный диапазон</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <label class="form-label client-filter-label" for="client-archive-filter">&#1057;&#1086;&#1089;&#1090;&#1086;&#1103;&#1085;&#1080;&#1077;</label>
+                <select id="client-archive-filter" class="form-select" @bind="filter.ArchiveState" @bind:after="ApplyFiltersAsync">
+                    <option value="@ClientArchiveFilter.Active">&#1040;&#1082;&#1090;&#1080;&#1074;&#1085;&#1099;&#1077;</option>
+                    <option value="@ClientArchiveFilter.Archived">&#1040;&#1088;&#1093;&#1080;&#1074;&#1085;&#1099;&#1077;</option>
+                    <option value="@ClientArchiveFilter.All">&#1042;&#1089;&#1077; &#1082;&#1083;&#1080;&#1077;&#1085;&#1090;&#1099;</option>
+                </select>
+            </div>
+            @if (filter.Period == ClientDatePeriod.Custom)
+            {
+                <div class="col-12 col-md-6 col-xl-3">
+                    <label class="form-label client-filter-label" for="client-from-date">Начало периода</label>
+                    <input id="client-from-date" class="form-control" type="date" @bind="filter.FromDate"
+                           @bind:after="ApplyFiltersAsync" />
+                </div>
+                <div class="col-12 col-md-6 col-xl-3">
+                    <label class="form-label client-filter-label" for="client-to-date">Окончание периода</label>
+                    <input id="client-to-date" class="form-control" type="date" @bind="filter.ToDate"
+                           @bind:after="ApplyFiltersAsync" />
+                </div>
+            }
+        </div>
+        @if (filterError is not null)
+        {
+            <div class="alert alert-warning mt-3 mb-0" role="alert">@filterError</div>
+        }
+    </div>
+</section>
 
-
-@if (clients.Count == 0)
+@if (clients.Count == 0 && !HasActiveFilters)
 {
-    <p>Клиенты отсутствуют.</p>
+    <p class="text-muted">&#1055;&#1086;&#1082;&#1072; &#1085;&#1077;&#1090; &#1072;&#1082;&#1090;&#1080;&#1074;&#1085;&#1099;&#1093; &#1082;&#1083;&#1080;&#1077;&#1085;&#1090;&#1086;&#1074;.</p>
 }
-else if (!filteredClients.Any())
+else if (clients.Count == 0)
 {
     <p>Клиенты не найдены</p>
 }
 else
 {
-    <ul>
-        @foreach (var client in filteredClients)
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
+        @foreach (var client in clients)
         {
-            <li>
-                <div><a href="@($"/clients/{client.Id}")">@client.FullName</a></div>
-                <div>@client.Phone</div>
-                <div>@client.Email</div>
-                <button type="button" @onclick="() => ArchiveClient(client.Id)">Архивировать</button>
-            </li>
-        }
-    </ul>
-}
+            <div class="col" @key="client.Id">
+                <article class="card h-100 client-card @(client.IsArchived ? "client-card-archived" : null)">
+                    <div class="card-body d-flex flex-column">
+                        <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                            @if (client.IsArchived)
+                            {
+                                <span class="badge client-status-badge client-status-archived">Архивный</span>
+                            }
+                            else
+                            {
+                                <span class="badge client-status-badge client-status-active">Активный</span>
+                            }
+                        </div>
+                        <h2 class="h5 client-card-title mb-3"><a class="text-decoration-none" href="@($"/clients/{client.Id}")">@client.FullName</a></h2>
+                        @if (!string.IsNullOrWhiteSpace(client.Phone))
+                        {
+                            <div class="client-card-detail mb-3">
+                                <div class="client-card-label">Телефон</div>
+                                <div><a href="@($"tel:{client.Phone}")">@client.Phone</a></div>
+                            </div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(client.Email))
+                        {
+                            <div class="client-card-detail mb-3">
+                                <div class="client-card-label">Электронная почта</div>
+                                <div><a href="@($"mailto:{client.Email}")">@client.Email</a></div>
+                            </div>
+                        }
+                        <div class="client-card-footer mt-auto">
+                            <time class="client-card-date" datetime="@client.CreatedAt.ToString("O")">&#1057;&#1086;&#1079;&#1076;&#1072;&#1085;&#1072;: <span class="client-card-date-value">@client.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy")</span></time>
+                            <div class="d-flex flex-wrap gap-2 mt-3">
+                                <a class="btn btn-outline-primary btn-sm client-details-button" href="@($"/clients/{client.Id}")">&#1054;&#1090;&#1082;&#1088;&#1099;&#1090;&#1100; &#1082;&#1072;&#1088;&#1090;&#1086;&#1095;&#1082;&#1091;</a>
+                                @if (client.IsArchived)
+                                {
+                                    <button type="button" class="btn btn-outline-success btn-sm" @onclick="() => RestoreClient(client.Id)">&#1042;&#1086;&#1089;&#1089;&#1090;&#1072;&#1085;&#1086;&#1074;&#1080;&#1090;&#1100;</button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="btn btn-outline-secondary btn-sm client-archive-button" aria-label="Archive client" title="Archive client" @onclick="() => ArchiveClient(client.Id)">&#1040;&#1088;&#1093;&#1080;&#1074;&#1080;&#1088;&#1086;&#1074;&#1072;&#1090;&#1100;</button>
+                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </article>
+                            </div>
+                        }
+                    </div>
+                }
 
 @code {
     private List<Client> clients = [];
-    private string searchText = string.Empty;
+    private ClientListFilter filter = new();
     private bool operationSucceeded;
     private string? operationMessage;
-
-    private IEnumerable<Client> filteredClients => string.IsNullOrWhiteSpace(searchText)
-        ? clients
-        : clients.Where(client => client.FullName.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+    private string? filterError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -95,9 +199,39 @@ else
             FullName = string.Empty
         };
 
+    private bool HasActiveFilters =>
+        !string.IsNullOrWhiteSpace(filter.FullName) ||
+        !string.IsNullOrWhiteSpace(filter.Phone) ||
+        !string.IsNullOrWhiteSpace(filter.Email) ||
+        !string.IsNullOrWhiteSpace(filter.Comment) ||
+        filter.Period != ClientDatePeriod.AllTime ||
+        filter.ArchiveState != ClientArchiveFilter.Active;
+
     private async Task LoadClients()
     {
-        clients = await ClientService.GetClientsAsync();
+        clients = await ClientService.GetClientsAsync(filter);
+    }
+
+    private async Task ApplyFiltersAsync()
+    {
+        filterError = null;
+        if (filter.Period == ClientDatePeriod.Custom &&
+            filter.FromDate.HasValue &&
+            filter.ToDate.HasValue &&
+            filter.FromDate.Value.Date > filter.ToDate.Value.Date)
+        {
+            filterError = "Дата окончания периода должна быть не раньше даты начала.";
+            clients = [];
+            return;
+        }
+
+        await LoadClients();
+    }
+
+    private async Task ResetFiltersAsync()
+    {
+        filter = new ClientListFilter();
+        await ApplyFiltersAsync();
     }
 
     private async Task AddClient()
@@ -123,8 +257,22 @@ else
         var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         operationSucceeded = await ClientService.ArchiveClientAsync(clientId, authenticationState.User);
         operationMessage = operationSucceeded
-            ? "Клиент архивирован."
-            : "Не удалось архивировать клиента. Проверьте актуальность учётной записи: активность и роль.";
+            ? "\u041A\u043B\u0438\u0435\u043D\u0442 \u0430\u0440\u0445\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D."
+            : "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0430\u0440\u0445\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043A\u043B\u0438\u0435\u043D\u0442\u0430. \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u043F\u0440\u0430\u0432\u0430 \u0434\u043E\u0441\u0442\u0443\u043F\u0430 \u0438 \u0447\u0442\u043E \u043A\u043B\u0438\u0435\u043D\u0442 \u0435\u0449\u0451 \u043D\u0435 \u0430\u0440\u0445\u0438\u0432\u0438\u0440\u043E\u0432\u0430\u043D.";
+
+        if (operationSucceeded)
+        {
+            await LoadClients();
+        }
+    }
+
+    private async Task RestoreClient(int clientId)
+    {
+        var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        operationSucceeded = await ClientService.RestoreClientAsync(clientId, authenticationState.User);
+        operationMessage = operationSucceeded
+            ? "\u041A\u043B\u0438\u0435\u043D\u0442 \u0432\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D."
+            : "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0432\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C \u043A\u043B\u0438\u0435\u043D\u0442\u0430. \u041F\u0440\u043E\u0432\u0435\u0440\u044C\u0442\u0435 \u043F\u0440\u0430\u0432\u0430 \u0434\u043E\u0441\u0442\u0443\u043F\u0430 \u0438 \u0447\u0442\u043E \u043A\u043B\u0438\u0435\u043D\u0442 \u043D\u0430\u0445\u043E\u0434\u0438\u0442\u0441\u044F \u0432 \u0430\u0440\u0445\u0438\u0432\u0435.";
 
         if (operationSucceeded)
         {
@@ -132,4 +280,205 @@ else
         }
     }
 }
+
+<style>
+    .client-filter-panel {
+        border-color: #dce3eb;
+        border-radius: 0.65rem;
+        background-color: #f8fafc;
+    }
+
+    .client-filter-label {
+        margin-bottom: 0.4rem;
+        color: #344256;
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+
+    .client-card {
+        border: 1px solid #dfe5ec;
+        border-radius: 0.65rem;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    }
+
+    .client-card:hover {
+        border-color: #c5d0dc;
+        box-shadow: 0 0.35rem 0.9rem rgb(31 48 68 / 8%);
+        transform: translateY(-2px);
+    }
+
+    .client-card-archived {
+        background-color: #f5f6f7;
+        opacity: 0.8;
+    }
+
+    .client-card-title {
+        line-height: 1.4;
+        overflow-wrap: anywhere;
+    }
+
+    .client-card-label {
+        color: #667487;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.035em;
+        margin-bottom: 0.2rem;
+        text-transform: uppercase;
+    }
+
+    .client-card-detail {
+        color: #263445;
+        font-size: 0.9rem;
+        overflow-wrap: anywhere;
+    }
+
+    .client-status-badge {
+        border: 1px solid transparent;
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 0.35em 0.65em;
+    }
+
+    .client-status-active {
+        border-color: #c8e2d1;
+        background-color: #e8f4ec;
+        color: #315b3e;
+    }
+
+    .client-status-archived {
+        border-color: #d9dee4;
+        background-color: #eef0f2;
+        color: #4c5661;
+    }
+
+    .client-card-footer {
+        border-top: 1px solid #e8edf2;
+        padding-top: 0.85rem;
+    }
+
+    .client-archive-button {
+        font-size: 0;
+    }
+
+    .client-archive-button::after {
+        content: "Архивировать";
+        font-size: 0.875rem;
+    }
+
+    .client-card-date {
+        color: #778393;
+        font-size: 0.8rem;
+    }
+
+    .client-card-date-value {
+        font-size: 0.8rem;
+    }
+
+    .client-status-badge {
+        font-size: 0;
+    }
+
+    .client-status-active::after {
+        content: "\0041\0063\0074\0069\0076\0065";
+        font-size: 0.75rem;
+    }
+
+    .client-status-archived::after {
+        content: "\0410\0440\0445\0438\0432\043D\044B\0439";
+        font-size: 0.75rem;
+    }
+
+    .client-status-active::after {
+        content: "\0410\043A\0442\0438\0432\043D\044B\0439";
+    }
+
+    .client-card-label {
+        font-size: 0;
+    }
+
+    .client-card-detail:has(a[href^="tel:"]) .client-card-label::after {
+        content: "\0422\0435\043B\0435\0444\043E\043D";
+        font-size: 0.75rem;
+    }
+
+    .client-card-detail:has(a[href^="mailto:"]) .client-card-label::after {
+        content: "\042D\043B\0435\043A\0442\0440\043E\043D\043D\0430\044F \043F\043E\0447\0442\0430";
+        font-size: 0.75rem;
+    }
+
+    .client-archive-button {
+        font-size: 0.875rem;
+    }
+
+    .client-archive-button::after {
+        content: none;
+    }
+
+    .client-details-button {
+        font-size: 0;
+    }
+
+    .client-details-button::after {
+        content: "\041E\0442\043A\0440\044B\0442\044C \043A\0430\0440\0442\043E\0447\043A\0443";
+        font-size: 0.875rem;
+    }
+
+    .client-card-date {
+        font-size: 0;
+    }
+
+    .client-card-date::before {
+        content: "\0421\043E\0437\0434\0430\043D\0430: ";
+        font-size: 0.8rem;
+    }
+
+    .client-create-panel {
+        max-width: 48rem;
+        border-color: #dce3eb;
+        border-radius: 0.65rem;
+        overflow: hidden;
+    }
+
+    .client-create-panel .card-header {
+        border-bottom-color: #e4e9ef;
+        background-color: #f8fafc;
+        color: #263445;
+        padding: 1rem 1.25rem;
+    }
+
+    .client-create-panel .card-body {
+        padding: 1.25rem;
+    }
+
+    .client-create-form textarea {
+        min-height: 7rem;
+        resize: vertical;
+    }
+
+    .client-create-form .validation-summary {
+        margin-bottom: 1rem;
+    }
+
+    .client-create-form .validation-summary-errors,
+    .client-create-form .validation-message {
+        color: #b42318;
+        font-size: 0.875rem;
+    }
+
+    .client-create-form .validation-summary-errors {
+        margin-bottom: 1rem;
+    }
+
+    .client-create-form input.invalid,
+    .client-create-form textarea.invalid {
+        border-color: #dc3545;
+    }
+
+    @@media (max-width: 575.98px) {
+        .client-create-panel .card-body {
+            padding: 1rem;
+        }
+    }
+
+</style>
 
