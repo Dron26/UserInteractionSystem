@@ -1,0 +1,11 @@
+@page "/access-denied"
+@layout UserInteractionSystem.Components.Layout.AccountLayout
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+<PageTitle>Доступ запрещён</PageTitle>
+
+<div class="alert alert-warning" role="alert">
+    <h1 class="h4">Доступ запрещён</h1>
+    <p class="mb-0">У вас нет разрешения для просмотра этой страницы.</p>
+</div>
+<a class="btn btn-outline-primary" href="/" data-enhance-nav="false">На главную</a>

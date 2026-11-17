@@ -1,5 +1,8 @@
 @page "/clients/{id:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Microsoft.AspNetCore.Components.Authorization
 @inject UserInteractionSystem.Application.Services.ClientService ClientService
+@inject AuthenticationStateProvider AuthenticationStateProvider
 @rendermode InteractiveServer
 
 <PageTitle>Карточка клиента</PageTitle>
@@ -36,6 +39,13 @@ else
     else if (!isEditing)
     {
         <button type="button" @onclick="StartEditing">Редактировать</button>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(operationMessage))
+    {
+        <div class="alert @(operationSucceeded ? "alert-success" : "alert-danger")" role="alert">
+            @operationMessage
+        </div>
     }
 
     @if (isEditing && editClient is not null)
@@ -81,6 +91,8 @@ else
     private UserInteractionSystem.Domain.Entities.Client? client;
     private UserInteractionSystem.Domain.Entities.Client? editClient;
     private bool isEditing;
+    private bool operationSucceeded;
+    private string? operationMessage;
 
     protected override async Task OnInitializedAsync()
     {
@@ -115,9 +127,13 @@ else
             return;
         }
 
-        var updated = await ClientService.UpdateClientAsync(editClient);
+        var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        operationSucceeded = await ClientService.UpdateClientAsync(editClient, authenticationState.User);
+        operationMessage = operationSucceeded
+            ? "Данные клиента сохранены."
+            : "Не удалось сохранить изменения. Проверьте данные и актуальность учётной записи: активность и роль.";
 
-        if (updated)
+        if (operationSucceeded)
         {
             client = await ClientService.GetClientByIdAsync(id);
             editClient = null;

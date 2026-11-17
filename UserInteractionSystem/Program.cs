@@ -1,3 +1,8 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Antiforgery;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -32,9 +37,40 @@ builder.Services.AddScoped<RequestService>();
 builder.Services.AddScoped<InteractionService>();
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/login";
+        options.AccessDeniedPath = "/access-denied";
+        options.Cookie.Name = "UserInteractionSystem.Auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.IsEssential = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        options.SlidingExpiration = true;
+        options.Events.OnValidatePrincipal = async context =>
+        {
+            var userService = context.HttpContext.RequestServices.GetRequiredService<UserService>();
+            if (await userService.IsAuthenticatedUserCurrentAsync(context.Principal))
+            {
+                return;
+            }
+
+            context.RejectPrincipal();
+            await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            context.Response.Redirect("/login?session=invalid");
+        };
+    });
+builder.Services.AddAuthorization();
+builder.Services.AddCascadingAuthenticationState();
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddScoped<AuthenticationStateProvider, UserRevalidatingAuthenticationStateProvider>();
 
 var app = builder.Build();
 
@@ -55,9 +91,96 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.UseStaticFiles();
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseAntiforgery();
+
+app.MapPost("/account/login", async (
+    HttpContext context,
+    IAntiforgery antiforgery,
+    UserService userService) =>
+{
+    if (!await IsValidAntiforgeryRequestAsync(context, antiforgery))
+    {
+        return Results.BadRequest();
+    }
+
+    var form = await context.Request.ReadFormAsync();
+    var authenticatedUser = await userService.AuthenticateAsync(form["userName"], form["password"]);
+    if (authenticatedUser is null)
+    {
+        return Results.Redirect("/login?error=true");
+    }
+
+    var claims = new[]
+    {
+        new Claim("UserId", authenticatedUser.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+        new Claim("UserName", authenticatedUser.UserName),
+        new Claim(ClaimTypes.Role, authenticatedUser.Role.ToString())
+    };
+    var identity = new ClaimsIdentity(
+        claims,
+        CookieAuthenticationDefaults.AuthenticationScheme,
+        "UserName",
+        ClaimTypes.Role);
+    await context.SignInAsync(
+        CookieAuthenticationDefaults.AuthenticationScheme,
+        new ClaimsPrincipal(identity));
+
+    return Results.Redirect("/");
+}).AllowAnonymous();
+
+app.MapPost("/account/logout", async (HttpContext context, IAntiforgery antiforgery) =>
+{
+    if (!await IsValidAntiforgeryRequestAsync(context, antiforgery))
+    {
+        return Results.BadRequest();
+    }
+
+    await context.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+    return Results.Redirect("/login?loggedOut=true");
+}).RequireAuthorization();
+
+app.MapPost("/account/setup", async (
+    HttpContext context,
+    IAntiforgery antiforgery,
+    UserService userService) =>
+{
+    if (!await IsValidAntiforgeryRequestAsync(context, antiforgery))
+    {
+        return Results.BadRequest();
+    }
+
+    var form = await context.Request.ReadFormAsync();
+    var created = await userService.CreateInitialAdministratorAsync(
+        form["fullName"],
+        form["userName"],
+        form["password"]);
+
+    return created
+        ? Results.Redirect("/login?setup=complete")
+        : Results.Redirect("/setup?error=1");
+}).AllowAnonymous();
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 app.Run();
+
+static async Task<bool> IsValidAntiforgeryRequestAsync(HttpContext context, IAntiforgery antiforgery)
+{
+    if (!context.Request.HasFormContentType)
+    {
+        return false;
+    }
+
+    try
+    {
+        await antiforgery.ValidateRequestAsync(context);
+        return true;
+    }
+    catch (AntiforgeryValidationException)
+    {
+        return false;
+    }
+}

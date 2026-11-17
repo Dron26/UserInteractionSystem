@@ -1,0 +1,80 @@
+@page "/setup"
+@layout UserInteractionSystem.Components.Layout.AccountLayout
+@using Microsoft.AspNetCore.Antiforgery
+@inject IHttpContextAccessor HttpContextAccessor
+@inject IAntiforgery Antiforgery
+@inject UserInteractionSystem.Application.Services.UserService UserService
+
+<PageTitle>Первоначальная настройка</PageTitle>
+
+<div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-6">
+        <section class="card">
+            <div class="card-header">
+                <h1 class="h4 mb-0">Создание администратора</h1>
+            </div>
+            <div class="card-body">
+                @if (setupClosed)
+                {
+                    <div class="alert alert-info" role="status">
+                        Первоначальная настройка уже завершена. Создать администратора на этой странице нельзя.
+                    </div>
+                    <a class="btn btn-primary" href="/login" data-enhance-nav="false">Перейти ко входу</a>
+                }
+                else
+                {
+                    <p>Создайте первую учётную запись администратора. Роль Admin будет назначена сервером.</p>
+                    @if (error)
+                    {
+                        <div class="alert alert-danger" role="alert">
+                            Не удалось создать администратора. Проверьте данные или обновите страницу: настройка могла быть завершена в другом запросе.
+                        </div>
+                    }
+
+                    <form method="post" action="/account/setup">
+                        <input type="hidden" name="__RequestVerificationToken" value="@requestToken" />
+                        <div class="mb-3">
+                            <label class="form-label" for="setup-full-name">ФИО</label>
+                            <input id="setup-full-name" class="form-control" name="fullName" autocomplete="name" maxlength="200" required />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="setup-user-name">Логин</label>
+                            <input id="setup-user-name" class="form-control" name="userName" autocomplete="username" maxlength="100" required />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="setup-password">Пароль</label>
+                            <input id="setup-password" class="form-control" name="password" type="password" autocomplete="new-password" minlength="8" required />
+                            <div class="form-text">Минимум 8 символов.</div>
+                        </div>
+                        <button class="btn btn-primary" type="submit">Создать администратора</button>
+                    </form>
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")]
+    public bool Error { get; set; }
+
+    private string? requestToken;
+    private bool setupClosed;
+    private bool error;
+
+    protected override void OnInitialized()
+    {
+        var context = HttpContextAccessor.HttpContext;
+        if (context is not null)
+        {
+            requestToken = Antiforgery.GetAndStoreTokens(context).RequestToken;
+        }
+
+        error = Error;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        setupClosed = await UserService.HasAdministratorAsync();
+    }
+}

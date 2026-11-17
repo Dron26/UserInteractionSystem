@@ -1,10 +1,13 @@
 @page "/requests/{id:int}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Forms
 @using UserInteractionSystem.Application.Models
 @using UserInteractionSystem.Domain.Enums
 @inject UserInteractionSystem.Application.Services.RequestService RequestService
 @inject UserInteractionSystem.Application.Services.InteractionService InteractionService
+@inject AuthenticationStateProvider AuthenticationStateProvider
 @rendermode InteractiveServer
 
 <PageTitle>@(request is null ? "Заявка не найдена" : $"Заявка №{request.Id}")</PageTitle>
@@ -100,18 +103,6 @@ else
                 <EditForm Model="interactionForm" OnValidSubmit="AddInteractionAsync">
                     <DataAnnotationsValidator />
                     <div class="mb-3">
-                        <label class="form-label" for="interaction-user">Сотрудник, зарегистрировавший взаимодействие</label>
-                        <InputSelect id="interaction-user" class="form-select" @bind-Value="interactionForm.UserId" required>
-                            <option value="">Выберите сотрудника</option>
-                            @foreach (var user in interactionUsers)
-                            {
-                                <option value="@user.Id">@user.FullName</option>
-                            }
-                        </InputSelect>
-                        <ValidationMessage For="@(() => interactionForm.UserId)" />
-                    </div>
-
-                    <div class="mb-3">
                         <label class="form-label" for="interaction-channel">Канал</label>
                         <InputSelect id="interaction-channel" class="form-select" @bind-Value="interactionForm.Channel">
                             @foreach (var channel in Enum.GetValues<InteractionChannel>())
@@ -133,14 +124,7 @@ else
                         <ValidationMessage For="@(() => interactionForm.Content)" />
                     </div>
 
-                    @if (interactionUsers.Count == 0)
-                    {
-                        <div class="alert alert-warning" role="alert">
-                            Нет активных сотрудников, которые могут зарегистрировать взаимодействие.
-                        </div>
-                    }
-
-                    <button type="submit" class="btn btn-primary" disabled="@(isAddingInteraction || interactionUsers.Count == 0)">
+                    <button type="submit" class="btn btn-primary" disabled="@isAddingInteraction">
                         @(isAddingInteraction ? "Сохранение..." : "Добавить взаимодействие")
                     </button>
                 </EditForm>
@@ -193,7 +177,6 @@ else
     private RequestDetailsItem? request;
     private List<RequestAssigneeItem> activeUsers = [];
     private List<InteractionHistoryItem> interactions = [];
-    private List<InteractionUserItem> interactionUsers = [];
     private InteractionFormModel interactionForm = CreateInteractionForm();
     private bool isSaving;
     private bool saveSucceeded;
@@ -206,7 +189,6 @@ else
     {
         request = await RequestService.GetRequestByIdAsync(id);
         activeUsers = await RequestService.GetActiveUsersAsync();
-        interactionUsers = await InteractionService.GetActiveUsersAsync();
         interactions = request is null
             ? []
             : await InteractionService.GetInteractionsByRequestIdAsync(request.Id);
@@ -231,11 +213,12 @@ else
                 request.Id,
                 request.Status,
                 request.Priority,
-                request.ResponsibleUserId);
+                request.ResponsibleUserId,
+                (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User);
 
             if (!saveSucceeded)
             {
-                message = "Не удалось сохранить изменения. Проверьте выбранного ответственного пользователя.";
+                message = "Не удалось сохранить изменения. Проверьте данные и актуальность учётной записи: активность и роль.";
                 return;
             }
 
@@ -260,16 +243,17 @@ else
 
         try
         {
+            var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
             interactionSaveSucceeded = await InteractionService.AddInteractionAsync(
                 request.Id,
-                interactionForm.UserId,
+                authenticationState.User,
                 interactionForm.Channel,
                 interactionForm.Content,
                 interactionForm.ContactedAt);
 
             if (!interactionSaveSucceeded)
             {
-                interactionMessage = "Не удалось добавить взаимодействие. Проверьте данные и выбранного активного сотрудника.";
+                interactionMessage = "Не удалось добавить взаимодействие. Проверьте данные и актуальность учётной записи: активность и роль.";
                 return;
             }
 
@@ -320,9 +304,6 @@ else
 
     private sealed class InteractionFormModel
     {
-        [Required(ErrorMessage = "Выберите сотрудника, зарегистрировавшего взаимодействие.")]
-        public int? UserId { get; set; }
-
         public InteractionChannel Channel { get; set; } = InteractionChannel.Phone;
 
         [Required(ErrorMessage = "Укажите дату и время контакта.")]

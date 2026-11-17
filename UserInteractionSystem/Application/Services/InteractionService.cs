@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using UserInteractionSystem.Application.Models;
 using UserInteractionSystem.Domain.Entities;
@@ -9,10 +11,12 @@ namespace UserInteractionSystem.Application.Services;
 public class InteractionService
 {
     private readonly ApplicationDbContext _dbContext;
+    private readonly UserService _userService;
 
-    public InteractionService(ApplicationDbContext dbContext)
+    public InteractionService(ApplicationDbContext dbContext, UserService userService)
     {
         _dbContext = dbContext;
+        _userService = userService;
     }
 
     public async Task<List<InteractionHistoryItem>> GetInteractionsByRequestIdAsync(int requestId)
@@ -53,12 +57,17 @@ public class InteractionService
 
     public async Task<bool> AddInteractionAsync(
         int requestId,
-        int? userId,
+        ClaimsPrincipal? currentUser,
         InteractionChannel channel,
         string? content,
         DateTime? contactedAt)
     {
-        if (userId is null ||
+        if (currentUser?.Identity?.IsAuthenticated != true ||
+            !int.TryParse(
+                currentUser.FindFirst("UserId")?.Value,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out var userId) ||
             !Enum.IsDefined(channel) ||
             string.IsNullOrWhiteSpace(content) ||
             contactedAt is null)
@@ -74,10 +83,11 @@ public class InteractionService
             return false;
         }
 
-        var userIsActive = await _dbContext.Users
-            .AnyAsync(user => user.Id == userId.Value && user.IsActive);
+        var activeUser = await _dbContext.Users
+            .FirstOrDefaultAsync(user => user.Id == userId && user.IsActive);
 
-        if (!userIsActive)
+        if (activeUser is null ||
+            !await _userService.IsAuthenticatedUserCurrentAsync(currentUser))
         {
             return false;
         }
@@ -85,7 +95,7 @@ public class InteractionService
         var interaction = new Interaction
         {
             RequestId = requestId,
-            UserId = userId.Value,
+            UserId = activeUser.Id,
             Channel = channel,
             Content = content.Trim(),
             CreatedAt = contactedAt.Value.ToUniversalTime()

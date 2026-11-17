@@ -1,7 +1,10 @@
 @page "/users"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Admin")]
+@using Microsoft.AspNetCore.Components.Authorization
 @using UserInteractionSystem.Application.Models
 @using UserInteractionSystem.Domain.Enums
 @inject UserInteractionSystem.Application.Services.UserService UserService
+@inject AuthenticationStateProvider AuthenticationStateProvider
 @rendermode InteractiveServer
 
 <PageTitle>Сотрудники</PageTitle>
@@ -170,10 +173,11 @@ else
                 newUser.Role = UserRole.Admin;
             }
 
-            createSucceeded = await UserService.AddUserAsync(newUser);
+            var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            createSucceeded = await UserService.AddUserAsync(newUser, authenticationState.User);
             if (!createSucceeded)
             {
-                createMessage = "Не удалось создать пользователя. Проверьте данные: логин должен быть уникальным, а пароль — содержать не менее 8 символов.";
+                createMessage = "Не удалось создать пользователя. Проверьте данные, права администратора и активность своей учётной записи.";
                 return;
             }
 
@@ -196,10 +200,15 @@ else
 
         try
         {
-            listOperationSucceeded = await UserService.UpdateUserAsync(user.Id, user.FullName, user.UserName);
+            var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            listOperationSucceeded = await UserService.UpdateUserAsync(
+                user.Id,
+                user.FullName,
+                user.UserName,
+                authenticationState.User);
             listMessage = listOperationSucceeded
                 ? "Данные пользователя сохранены."
-                : "Не удалось сохранить данные. Проверьте ФИО, длину логина и его уникальность.";
+                : "Не удалось сохранить данные. Проверьте ФИО, длину и уникальность логина, а также актуальность прав администратора.";
             if (listOperationSucceeded)
             {
                 await LoadUsersAsync();
@@ -218,10 +227,14 @@ else
 
         try
         {
-            listOperationSucceeded = await UserService.SetUserActiveAsync(user.Id, !user.IsActive);
+            var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            listOperationSucceeded = await UserService.SetUserActiveAsync(
+                user.Id,
+                !user.IsActive,
+                authenticationState.User);
             listMessage = listOperationSucceeded
                 ? user.IsActive ? "Пользователь деактивирован. Связанные заявки и взаимодействия сохранены." : "Пользователь активирован."
-                : "Не удалось изменить статус пользователя.";
+                : "Не удалось изменить статус пользователя. Проверьте права администратора и активность своей учётной записи.";
             if (listOperationSucceeded)
             {
                 await LoadUsersAsync();

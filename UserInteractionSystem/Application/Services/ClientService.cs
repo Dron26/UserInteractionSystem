@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using UserInteractionSystem.Domain.Entities;
 using UserInteractionSystem.Infrastructure.Data;
@@ -7,10 +8,12 @@ namespace UserInteractionSystem.Application.Services;
 public class ClientService
 {
     private readonly ApplicationDbContext _dbContext;
+    private readonly UserService _userService;
 
-    public ClientService(ApplicationDbContext dbContext)
+    public ClientService(ApplicationDbContext dbContext, UserService userService)
     {
         _dbContext = dbContext;
+        _userService = userService;
     }
 
     public async Task<List<Client>> GetClientsAsync()
@@ -25,11 +28,12 @@ public class ClientService
         return await _dbContext.Clients.FindAsync(clientId);
     }
 
-    public async Task<bool> UpdateClientAsync(Client client)
+    public async Task<bool> UpdateClientAsync(Client client, ClaimsPrincipal? currentUser)
     {
         var existingClient = await _dbContext.Clients.FindAsync(client.Id);
 
-        if (existingClient is null || existingClient.IsArchived)
+        if (existingClient is null || existingClient.IsArchived ||
+            !await _userService.IsAuthenticatedUserCurrentAsync(currentUser))
         {
             return false;
         }
@@ -44,8 +48,13 @@ public class ClientService
         return true;
     }
 
-    public async Task<bool> AddClientAsync(Client client)
+    public async Task<bool> AddClientAsync(Client client, ClaimsPrincipal? currentUser)
     {
+        if (!await _userService.IsAuthenticatedUserCurrentAsync(currentUser))
+        {
+            return false;
+        }
+
         await _dbContext.Clients.AddAsync(client);
         
         var result = await _dbContext.SaveChangesAsync();
@@ -53,11 +62,11 @@ public class ClientService
         return result > 0;
     }
 
-    public async Task<bool> ArchiveClientAsync(int clientId)
+    public async Task<bool> ArchiveClientAsync(int clientId, ClaimsPrincipal? currentUser)
     {
         var client = await _dbContext.Clients.FindAsync(clientId);
 
-        if (client is null)
+        if (client is null || !await _userService.IsAuthenticatedUserCurrentAsync(currentUser))
         {
             return false;
         }

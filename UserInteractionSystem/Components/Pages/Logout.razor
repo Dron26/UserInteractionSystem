@@ -1,0 +1,39 @@
+@page "/logout"
+@layout UserInteractionSystem.Components.Layout.AccountLayout
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Microsoft.AspNetCore.Antiforgery
+@inject IHttpContextAccessor HttpContextAccessor
+@inject IAntiforgery Antiforgery
+
+<PageTitle>Выход из системы</PageTitle>
+
+<div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-5">
+        <section class="card">
+            <div class="card-header">
+                <h1 class="h4 mb-0">Выход из системы</h1>
+            </div>
+            <div class="card-body">
+                <p>Завершить текущий сеанс?</p>
+                <form method="post" action="/account/logout">
+                    <input type="hidden" name="__RequestVerificationToken" value="@requestToken" />
+                    <button class="btn btn-danger" type="submit">Выйти</button>
+                    <a class="btn btn-outline-secondary ms-2" href="/" data-enhance-nav="false">Отмена</a>
+                </form>
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    private string? requestToken;
+
+    protected override void OnInitialized()
+    {
+        var context = HttpContextAccessor.HttpContext;
+        if (context is not null)
+        {
+            requestToken = Antiforgery.GetAndStoreTokens(context).RequestToken;
+        }
+    }
+}

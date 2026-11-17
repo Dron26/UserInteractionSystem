@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using UserInteractionSystem.Domain.Entities;
 using UserInteractionSystem.Domain.Enums;
@@ -9,10 +10,12 @@ namespace UserInteractionSystem.Application.Services;
 public class RequestService
 {
     private readonly ApplicationDbContext _dbContext;
+    private readonly UserService _userService;
 
-    public RequestService(ApplicationDbContext dbContext)
+    public RequestService(ApplicationDbContext dbContext, UserService userService)
     {
         _dbContext = dbContext;
+        _userService = userService;
     }
 
     public async Task<List<Request>> GetRequestsAsync()
@@ -22,7 +25,7 @@ public class RequestService
             .ToListAsync();
     }
 
-    public async Task<bool> AddRequestAsync(Request request)
+    public async Task<bool> AddRequestAsync(Request request, ClaimsPrincipal? currentUser)
     {
         if (request is null ||
             string.IsNullOrWhiteSpace(request.Title) ||
@@ -49,6 +52,11 @@ public class RequestService
             {
                 return false;
             }
+        }
+
+        if (!await _userService.IsAuthenticatedUserCurrentAsync(currentUser))
+        {
+            return false;
         }
 
         var now = DateTime.UtcNow;
@@ -167,7 +175,8 @@ public class RequestService
         int requestId,
         RequestStatus status,
         RequestPriority priority,
-        int? responsibleUserId)
+        int? responsibleUserId,
+        ClaimsPrincipal? currentUser)
     {
         if (!Enum.IsDefined(status) ||
             priority is not (RequestPriority.Low or RequestPriority.Normal or RequestPriority.High))
@@ -193,6 +202,11 @@ public class RequestService
             {
                 return false;
             }
+        }
+
+        if (!await _userService.IsAuthenticatedUserCurrentAsync(currentUser))
+        {
+            return false;
         }
 
         var now = DateTime.UtcNow;

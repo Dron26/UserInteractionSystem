@@ -1,0 +1,109 @@
+@page "/login"
+@layout UserInteractionSystem.Components.Layout.AccountLayout
+@using Microsoft.AspNetCore.Antiforgery
+@inject IHttpContextAccessor HttpContextAccessor
+@inject IAntiforgery Antiforgery
+@inject NavigationManager Navigation
+@inject UserInteractionSystem.Application.Services.UserService UserService
+
+<PageTitle>Вход в систему</PageTitle>
+
+<div class="row justify-content-center">
+    <div class="col-12 col-md-8 col-lg-5">
+        <section class="card">
+            <div class="card-header">
+                <h1 class="h4 mb-0">Вход в систему</h1>
+            </div>
+            <div class="card-body">
+                @if (hasAdministrator)
+                {
+                    @if (sessionInvalid)
+                    {
+                        <div class="alert alert-warning" role="alert">
+                            Сеанс завершён: учётная запись отключена или её роль изменилась. Войдите снова.
+                        </div>
+                    }
+                    @if (error)
+                    {
+                        <div class="alert alert-danger" role="alert">
+                            Не удалось выполнить вход. Проверьте логин и пароль, а также активность учётной записи.
+                        </div>
+                    }
+                    @if (loggedOut)
+                    {
+                        <div class="alert alert-success" role="status">Вы вышли из системы.</div>
+                    }
+                    @if (setupComplete)
+                    {
+                        <div class="alert alert-success" role="status">Администратор создан. Теперь войдите в систему.</div>
+                    }
+
+                    <form method="post" action="/account/login">
+                        <input type="hidden" name="__RequestVerificationToken" value="@requestToken" />
+                        <div class="mb-3">
+                            <label class="form-label" for="login-user-name">Логин</label>
+                            <input id="login-user-name" class="form-control" name="userName" autocomplete="username" maxlength="100" required />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="login-password">Пароль</label>
+                            <input id="login-password" class="form-control" name="password" type="password" autocomplete="current-password" required />
+                        </div>
+                        <button class="btn btn-primary" type="submit">Войти</button>
+                    </form>
+                }
+                else
+                {
+                    <div class="alert alert-warning" role="status">
+                        Администратор ещё не создан. Пройдите первоначальную настройку.
+                    </div>
+                    <a class="btn btn-primary" href="/setup" data-enhance-nav="false">Первоначальная настройка</a>
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")]
+    public bool Error { get; set; }
+
+    [SupplyParameterFromQuery(Name = "loggedOut")]
+    public bool LoggedOut { get; set; }
+
+    [SupplyParameterFromQuery(Name = "setup")]
+    public string? Setup { get; set; }
+
+    [SupplyParameterFromQuery(Name = "session")]
+    public string? Session { get; set; }
+
+    private string? requestToken;
+    private bool hasAdministrator;
+    private bool error;
+    private bool sessionInvalid;
+    private bool loggedOut;
+    private bool setupComplete;
+
+    protected override void OnInitialized()
+    {
+        var context = HttpContextAccessor.HttpContext;
+        if (context is not null)
+        {
+            requestToken = Antiforgery.GetAndStoreTokens(context).RequestToken;
+        }
+
+        error = Error;
+        sessionInvalid = Session == "invalid";
+        loggedOut = LoggedOut;
+        setupComplete = Setup == "complete";
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        hasAdministrator = await UserService.HasAdministratorAsync();
+
+        if (HttpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true)
+        {
+            Navigation.NavigateTo("/", forceLoad: true);
+        }
+    }
+}
