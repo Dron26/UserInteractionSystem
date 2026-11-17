@@ -58,45 +58,135 @@
 }
 
 
+<section class="card request-filter-panel mb-4" aria-labelledby="request-filters-heading">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h2 id="request-filters-heading" class="h5 mb-0">Фильтры заявок</h2>
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ResetFiltersAsync">Сбросить фильтры</button>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-12 col-md-6 col-xl-3">
+                <label class="form-label request-filter-label" for="request-assignee-filter">Ответственный сотрудник</label>
+                <InputSelect id="request-assignee-filter" class="form-select"
+                             @bind-Value="filter.ResponsibleUserId" @bind-Value:after="ApplyFiltersAsync">
+                    <option value="">Все сотрудники</option>
+                    @foreach (var user in activeUsers)
+                    {
+                        <option value="@user.Id">@user.FullName</option>
+                    }
+                </InputSelect>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <label class="form-label request-filter-label" for="request-status-filter">Статус</label>
+                <InputSelect id="request-status-filter" class="form-select"
+                             @bind-Value="filter.Status" @bind-Value:after="ApplyFiltersAsync">
+                    <option value="">Все статусы</option>
+                    @foreach (var status in Enum.GetValues<RequestStatus>())
+                    {
+                        <option value="@status">@GetStatusName(status)</option>
+                    }
+                </InputSelect>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <label class="form-label request-filter-label" for="request-priority-filter">Приоритет</label>
+                <InputSelect id="request-priority-filter" class="form-select"
+                             @bind-Value="filter.Priority" @bind-Value:after="ApplyFiltersAsync">
+                    <option value="">Все приоритеты</option>
+                    @foreach (var priority in Enum.GetValues<RequestPriority>())
+                    {
+                        <option value="@priority">@GetPriorityName(priority)</option>
+                    }
+                </InputSelect>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <label class="form-label request-filter-label" for="request-period-filter">Период создания</label>
+                <InputSelect id="request-period-filter" class="form-select"
+                             @bind-Value="filter.Period" @bind-Value:after="ApplyFiltersAsync">
+                    <option value="@RequestDatePeriod.AllTime">Всё время</option>
+                    <option value="@RequestDatePeriod.Today">Сегодня</option>
+                    <option value="@RequestDatePeriod.LastWeek">Последняя неделя</option>
+                    <option value="@RequestDatePeriod.LastMonth">Последний месяц</option>
+                    <option value="@RequestDatePeriod.Custom">Произвольный диапазон</option>
+                </InputSelect>
+            </div>
+            @if (filter.Period == RequestDatePeriod.Custom)
+            {
+                <div class="col-12 col-md-6">
+                    <label class="form-label request-filter-label" for="request-from-date">Начало периода</label>
+                    <InputDate id="request-from-date" class="form-control" @bind-Value="filter.FromDate"
+                               @bind-Value:after="ApplyFiltersAsync" />
+                </div>
+                <div class="col-12 col-md-6">
+                    <label class="form-label request-filter-label" for="request-to-date">Окончание периода</label>
+                    <InputDate id="request-to-date" class="form-control" @bind-Value="filter.ToDate"
+                               @bind-Value:after="ApplyFiltersAsync" />
+                </div>
+            }
+        </div>
+        @if (filterError is not null)
+        {
+            <div class="alert alert-warning mt-3 mb-0" role="alert">@filterError</div>
+        }
+    </div>
+</section>
+
 @if (requests is null)
 {
     <p>Загрузка заявок...</p>
 }
 else if (requests.Count == 0)
 {
-    <p>Заявок пока нет.</p>
+    <p class="text-muted">Заявок по выбранным фильтрам не найдено.</p>
 }
 else
 {
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Название</th>
-                <th>Клиент</th>
-                <th>Статус</th>
-                <th>Приоритет</th>
-                <th>Создана</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var request in requests)
-            {
-                <tr>
-                    <td><a href="@($"/requests/{request.Id}")">@request.Title</a></td>
-                    <td>@request.ClientName</td>
-                    <td>@GetStatusName(request.Status)</td>
-                    <td>@GetPriorityName(request.Priority)</td>
-                    <td>@request.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
+        @foreach (var request in requests)
+        {
+            <div class="col" @key="request.Id">
+                <article class="card h-100 request-card">
+                    <div class="card-header d-flex justify-content-between align-items-center gap-2">
+                        <span class="request-number">Заявка №@request.Id</span>
+                        <span class="badge request-status-badge @GetStatusBadgeClass(request.Status)">@GetStatusName(request.Status)</span>
+                    </div>
+                    <div class="card-body d-flex flex-column">
+                        <h2 class="h5 card-title request-card-title">
+                            <a class="text-decoration-none" href="@($"/requests/{request.Id}")">@request.Title</a>
+                        </h2>
+                        <dl class="request-card-details mb-3">
+                            <div class="request-card-detail">
+                                <dt>Клиент</dt>
+                                <dd>@request.ClientName</dd>
+                            </div>
+                            <div class="request-card-detail">
+                                <dt>Ответственный</dt>
+                                <dd>@(request.ResponsibleUserName ?? "Не назначен")</dd>
+                            </div>
+                            <div class="request-card-detail">
+                                <dt>Приоритет</dt>
+                                <dd><span class="badge request-priority-badge @GetPriorityBadgeClass(request.Priority)">@GetPriorityName(request.Priority)</span></dd>
+                            </div>
+                            <div class="request-card-detail request-card-date">
+                                <dt>Создана</dt>
+                                <dd>@request.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</dd>
+                            </div>
+                        </dl>
+                        <a class="btn btn-outline-primary btn-sm mt-auto align-self-start"
+                           href="@($"/requests/{request.Id}")">Открыть заявку</a>
+                    </div>
+                </article>
+            </div>
+        }
+    </div>
 }
 
 @code {
     private List<RequestListItem>? requests;
+    private List<RequestAssigneeItem> activeUsers = [];
+    private RequestListFilter filter = new();
     private bool showCreateForm;
     private string? errorMessage;
+    private string? filterError;
     private List<Client> clients = new();
     private Request newRequest = new()
     {
@@ -106,8 +196,50 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        requests = await RequestService.GetRequestListAsync();
+        activeUsers = await RequestService.GetActiveUsersAsync();
+        await ApplyFiltersAsync();
     }
+
+    private async Task ApplyFiltersAsync()
+    {
+        filterError = null;
+        if (filter.Period == RequestDatePeriod.Custom &&
+            filter.FromDate.HasValue &&
+            filter.ToDate.HasValue &&
+            filter.FromDate.Value.Date > filter.ToDate.Value.Date)
+        {
+            filterError = "Дата окончания периода должна быть не раньше даты начала.";
+            requests = [];
+            return;
+        }
+
+        requests = await RequestService.GetRequestListAsync(filter);
+    }
+
+    private async Task ResetFiltersAsync()
+    {
+        filter = new RequestListFilter();
+        await ApplyFiltersAsync();
+    }
+
+    private static string GetStatusBadgeClass(RequestStatus status) => status switch
+    {
+        RequestStatus.New => "request-status-new",
+        RequestStatus.InProgress => "request-status-in-progress",
+        RequestStatus.WaitingForClient => "request-status-waiting",
+        RequestStatus.Completed => "request-status-completed",
+        RequestStatus.Cancelled => "request-status-cancelled",
+        _ => "request-status-cancelled"
+    };
+
+    private static string GetPriorityBadgeClass(RequestPriority priority) => priority switch
+    {
+        RequestPriority.Low => "request-priority-low",
+        RequestPriority.Normal => "request-priority-normal",
+        RequestPriority.High => "request-priority-high",
+        RequestPriority.Urgent => "request-priority-urgent",
+        _ => "request-priority-low"
+    };
 
     private static string GetStatusName(RequestStatus status) => status switch
     {
@@ -164,7 +296,7 @@ else
             return;
         }
 
-        requests = await RequestService.GetRequestListAsync();
+        await ApplyFiltersAsync();
 
         newRequest = new Request
         {
@@ -175,3 +307,143 @@ else
         showCreateForm = false;
     }
 }
+
+<style>
+    .request-filter-panel {
+        border-color: #dce3eb;
+        border-radius: 0.65rem;
+        background-color: #f8fafc;
+    }
+
+    .request-filter-panel .card-header {
+        border-bottom-color: #e4e9ef;
+        background-color: #f1f5f9;
+        border-radius: 0.65rem 0.65rem 0 0;
+    }
+
+    .request-filter-label {
+        margin-bottom: 0.4rem;
+        color: #344256;
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+
+    .request-card {
+        border: 1px solid #dfe5ec;
+        border-radius: 0.65rem;
+        transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    }
+
+    .request-card:hover {
+        border-color: #c5d0dc;
+        box-shadow: 0 0.35rem 0.9rem rgb(31 48 68 / 8%);
+        transform: translateY(-2px);
+    }
+
+    .request-card .card-header {
+        border-bottom-color: #e8edf2;
+        border-radius: 0.65rem 0.65rem 0 0;
+        background-color: #fbfcfd;
+    }
+
+    .request-number {
+        color: #344256;
+        font-size: 0.95rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+    }
+
+    .request-status-badge,
+    .request-priority-badge {
+        border: 1px solid transparent;
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 0.35em 0.65em;
+    }
+
+    .request-status-new {
+        border-color: #c9ddf5;
+        background-color: #e8f2fd;
+        color: #244b75;
+    }
+
+    .request-status-in-progress {
+        border-color: #d9d0ef;
+        background-color: #f0ebfa;
+        color: #51416f;
+    }
+
+    .request-status-waiting {
+        border-color: #ebdfa9;
+        background-color: #fbf5d9;
+        color: #65551f;
+    }
+
+    .request-status-completed {
+        border-color: #c8e2d1;
+        background-color: #e8f4ec;
+        color: #315b3e;
+    }
+
+    .request-status-cancelled {
+        border-color: #d9dee4;
+        background-color: #eef0f2;
+        color: #4c5661;
+    }
+
+    .request-priority-low {
+        border-color: #d9dee4;
+        background-color: #f0f2f4;
+        color: #4c5661;
+    }
+
+    .request-priority-normal {
+        border-color: #c9ddf5;
+        background-color: #e8f2fd;
+        color: #244b75;
+    }
+
+    .request-priority-high {
+        border-color: #f0d4b8;
+        background-color: #fbefe2;
+        color: #75491f;
+    }
+
+    .request-priority-urgent {
+        border-color: #edcaca;
+        background-color: #fae9e9;
+        color: #792f31;
+    }
+
+    .request-card-title {
+        line-height: 1.4;
+        margin-bottom: 1.1rem;
+        overflow-wrap: anywhere;
+    }
+
+    .request-card-details {
+        display: grid;
+        gap: 0.75rem;
+    }
+
+    .request-card-detail dt {
+        color: #667487;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.035em;
+        margin-bottom: 0.2rem;
+        text-transform: uppercase;
+    }
+
+    .request-card-detail dd {
+        color: #263445;
+        font-size: 0.9rem;
+        margin-bottom: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .request-card-date dd {
+        color: #778393;
+        font-size: 0.8rem;
+    }
+</style>

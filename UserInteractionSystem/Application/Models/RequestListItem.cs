@@ -10,6 +10,10 @@ public class RequestListItem
 
     public string ClientName { get; set; } = string.Empty;
 
+    public int? ResponsibleUserId { get; set; }
+
+    public string? ResponsibleUserName { get; set; }
+
     public RequestStatus Status { get; set; }
 
     public RequestPriority Priority { get; set; }

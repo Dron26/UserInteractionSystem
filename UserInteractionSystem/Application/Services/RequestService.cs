@@ -74,9 +74,80 @@ public class RequestService
         return result > 0;
     }
 
-    public async Task<List<RequestListItem>> GetRequestListAsync()
+    public async Task<List<RequestListItem>> GetRequestListAsync(RequestListFilter? filter = null)
     {
-        return await _dbContext.Requests
+        filter ??= new RequestListFilter();
+
+        var query = _dbContext.Requests
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (filter.ResponsibleUserId.HasValue)
+        {
+            query = query.Where(request => request.ResponsibleUserId == filter.ResponsibleUserId.Value);
+        }
+
+        if (filter.Status.HasValue)
+        {
+            query = query.Where(request => request.Status == filter.Status.Value);
+        }
+
+        if (filter.Priority.HasValue)
+        {
+            query = query.Where(request => request.Priority == filter.Priority.Value);
+        }
+
+        DateTime? fromUtc = null;
+        DateTime? toUtcExclusive = null;
+        var nowUtc = DateTime.UtcNow;
+        switch (filter.Period)
+        {
+            case RequestDatePeriod.Today:
+                var localToday = DateTime.Today;
+                fromUtc = localToday.ToUniversalTime();
+                toUtcExclusive = localToday.AddDays(1).ToUniversalTime();
+                break;
+            case RequestDatePeriod.LastWeek:
+                fromUtc = nowUtc.AddDays(-7);
+                toUtcExclusive = nowUtc;
+                break;
+            case RequestDatePeriod.LastMonth:
+                fromUtc = nowUtc.AddMonths(-1);
+                toUtcExclusive = nowUtc;
+                break;
+            case RequestDatePeriod.Custom:
+                if (filter.FromDate.HasValue)
+                {
+                    fromUtc = DateTime.SpecifyKind(filter.FromDate.Value.Date, DateTimeKind.Local).ToUniversalTime();
+                }
+
+                if (filter.ToDate.HasValue)
+                {
+                    toUtcExclusive = DateTime.SpecifyKind(
+                        filter.ToDate.Value.Date.AddDays(1),
+                        DateTimeKind.Local).ToUniversalTime();
+                }
+
+                if (filter.FromDate.HasValue && filter.ToDate.HasValue &&
+                    filter.FromDate.Value.Date > filter.ToDate.Value.Date)
+                {
+                    return [];
+                }
+
+                break;
+        }
+
+        if (fromUtc.HasValue)
+        {
+            query = query.Where(request => request.CreatedAt >= fromUtc.Value);
+        }
+
+        if (toUtcExclusive.HasValue)
+        {
+            query = query.Where(request => request.CreatedAt < toUtcExclusive.Value);
+        }
+
+        return await query
             .Join(
                 _dbContext.Clients,
                 request => request.ClientId,
@@ -86,11 +157,17 @@ public class RequestService
                     Id = request.Id,
                     Title = request.Title,
                     ClientName = client.FullName,
+                    ResponsibleUserId = request.ResponsibleUserId,
+                    ResponsibleUserName = _dbContext.Users
+                        .Where(user => user.Id == request.ResponsibleUserId)
+                        .Select(user => user.FullName)
+                        .FirstOrDefault(),
                     Status = request.Status,
                     Priority = request.Priority,
                     CreatedAt = request.CreatedAt
                 })
             .OrderByDescending(request => request.CreatedAt)
+            .ThenByDescending(request => request.Id)
             .ToListAsync();
     }
 
