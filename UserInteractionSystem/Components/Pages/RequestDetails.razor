@@ -12,7 +12,8 @@
 
 <PageTitle>@(request is null ? "Заявка не найдена" : $"Заявка №{request.Id}")</PageTitle>
 
-<a class="btn btn-outline-secondary mb-3" href="/requests">К списку заявок</a>
+<main class="request-details-container">
+    <a class="btn btn-outline-secondary mb-3" href="/requests">К списку заявок</a>
 
 @if (request is null)
 {
@@ -22,7 +23,7 @@
 }
 else
 {
-    <div class="card">
+    <div class="card request-details-card">
         <div class="card-header">
             <h1 class="h4 mb-0">Заявка №@request.Id</h1>
         </div>
@@ -48,7 +49,7 @@ else
             </dl>
 
             <h2 class="h5">Управление заявкой</h2>
-            <EditForm Model="request" OnValidSubmit="SaveChangesAsync">
+            <EditForm Model="request" OnValidSubmit="SaveChangesAsync" class="request-edit-form">
                 <div class="mb-3">
                     <label class="form-label" for="request-status">Статус</label>
                     <InputSelect id="request-status" class="form-select" @bind-Value="request.Status">
@@ -96,72 +97,219 @@ else
                 </div>
             }
 
-            <hr class="my-4" />
-            <section aria-labelledby="interaction-history-heading">
-                <h2 id="interaction-history-heading" class="h5">История взаимодействий</h2>
+                </div>
+            </div>
 
-                <EditForm Model="interactionForm" OnValidSubmit="AddInteractionAsync">
-                    <DataAnnotationsValidator />
-                    <div class="mb-3">
-                        <label class="form-label" for="interaction-channel">Канал</label>
-                        <InputSelect id="interaction-channel" class="form-select" @bind-Value="interactionForm.Channel">
-                            @foreach (var channel in Enum.GetValues<InteractionChannel>())
+            <section class="card mb-4" aria-labelledby="interaction-entry-heading">
+                <div class="card-header">
+                    <h2 id="interaction-entry-heading" class="h5 mb-0">Добавить взаимодействие</h2>
+                </div>
+                <div class="card-body">
+                    <EditForm Model="interactionForm" OnValidSubmit="AddInteractionAsync" class="interaction-entry-form">
+                        <DataAnnotationsValidator />
+                        <div class="mb-3">
+                            <label class="form-label" for="interaction-channel">Канал</label>
+                            <InputSelect id="interaction-channel" class="form-select" @bind-Value="interactionForm.Channel">
+                                @foreach (var channel in Enum.GetValues<InteractionChannel>())
+                                {
+                                    <option value="@channel">@GetChannelName(channel)</option>
+                                }
+                            </InputSelect>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="interaction-contacted-at">Дата и время контакта</label>
+                            <InputDate id="interaction-contacted-at" class="form-control" Type="InputDateType.DateTimeLocal" @bind-Value="interactionForm.ContactedAt" />
+                            <ValidationMessage For="@(() => interactionForm.ContactedAt)" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="interaction-content">Содержание взаимодействия</label>
+                            <InputTextArea id="interaction-content" class="form-control" rows="3" @bind-Value="interactionForm.Content" />
+                            <ValidationMessage For="@(() => interactionForm.Content)" />
+                        </div>
+
+                        <button type="submit" class="btn btn-primary" disabled="@isAddingInteraction">
+                            @(isAddingInteraction ? "Сохранение..." : "Добавить взаимодействие")
+                        </button>
+                    </EditForm>
+
+                    @if (!string.IsNullOrWhiteSpace(interactionMessage))
+                    {
+                        <div class="alert @(interactionSaveSucceeded ? "alert-success" : "alert-danger") mt-3 mb-0" role="alert">
+                            @interactionMessage
+                        </div>
+                    }
+                </div>
+            </section>
+
+            <section class="card mb-4" aria-labelledby="interaction-history-heading">
+                <div class="card-header">
+                    <h2 id="interaction-history-heading" class="h5 mb-0">История взаимодействий</h2>
+                </div>
+                <div class="card-body">
+                    <div class="interaction-filter-panel mb-3" aria-label="Фильтры истории взаимодействий">
+                        <div class="row g-3 align-items-end">
+                            <div class="col-12 col-md-6 col-xl-3">
+                                <label class="form-label" for="interaction-filter-author">Автор</label>
+                                <select id="interaction-filter-author" class="form-select" @bind="interactionFilter.UserId" @bind:after="ApplyInteractionFiltersAsync">
+                                    <option value="">Все авторы</option>
+                                    @foreach (var user in interactionAuthors)
+                                    {
+                                        <option value="@user.Id">@user.FullName</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-6 col-xl-3">
+                                <label class="form-label" for="interaction-filter-channel">Канал</label>
+                                <select id="interaction-filter-channel" class="form-select" @bind="interactionFilter.Channel" @bind:after="ApplyInteractionFiltersAsync">
+                                    <option value="">Все каналы</option>
+                                    @foreach (var channel in Enum.GetValues<InteractionChannel>())
+                                    {
+                                        <option value="@channel">@GetChannelName(channel)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-6 col-xl-3">
+                                <label class="form-label" for="interaction-filter-period">Период</label>
+                                <select id="interaction-filter-period" class="form-select" @bind="interactionFilter.Period" @bind:after="ApplyInteractionFiltersAsync">
+                                    <option value="@InteractionDatePeriod.AllTime">Всё время</option>
+                                    <option value="@InteractionDatePeriod.Today">Сегодня</option>
+                                    <option value="@InteractionDatePeriod.Last7Days">Последние 7 дней</option>
+                                    <option value="@InteractionDatePeriod.LastMonth">Последний месяц</option>
+                                    <option value="@InteractionDatePeriod.Custom">Произвольный диапазон</option>
+                                </select>
+                            </div>
+                            <div class="col-12 col-md-6 col-xl-3">
+                                <button type="button" class="btn btn-outline-secondary" @onclick="ResetInteractionFiltersAsync">Сбросить фильтры</button>
+                            </div>
+                            @if (interactionFilter.Period == InteractionDatePeriod.Custom)
                             {
-                                <option value="@channel">@GetChannelName(channel)</option>
-                            }
-                        </InputSelect>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label" for="interaction-contacted-at">Дата и время контакта</label>
-                        <InputDate id="interaction-contacted-at" class="form-control" Type="InputDateType.DateTimeLocal" @bind-Value="interactionForm.ContactedAt" />
-                        <ValidationMessage For="@(() => interactionForm.ContactedAt)" />
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label" for="interaction-content">Содержание взаимодействия</label>
-                        <InputTextArea id="interaction-content" class="form-control" rows="3" @bind-Value="interactionForm.Content" />
-                        <ValidationMessage For="@(() => interactionForm.Content)" />
-                    </div>
-
-                    <button type="submit" class="btn btn-primary" disabled="@isAddingInteraction">
-                        @(isAddingInteraction ? "Сохранение..." : "Добавить взаимодействие")
-                    </button>
-                </EditForm>
-
-                @if (!string.IsNullOrWhiteSpace(interactionMessage))
-                {
-                    <div class="alert @(interactionSaveSucceeded ? "alert-success" : "alert-danger") mt-3" role="alert">
-                        @interactionMessage
-                    </div>
-                }
-
-                @if (interactions.Count == 0)
-                {
-                    <p class="text-muted mt-3 mb-0">История взаимодействий пока пуста.</p>
-                }
-                else
-                {
-                    <div class="list-group mt-3">
-                        @foreach (var interaction in interactions)
-                        {
-                            <article class="list-group-item" @key="interaction.Id">
-                                <div class="d-flex justify-content-between flex-wrap gap-2">
-                                    <strong>@GetChannelName(interaction.Channel)</strong>
-                                    <time datetime="@interaction.CreatedAt.ToString("O")">
-                                        @interaction.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
-                                    </time>
+                                <div class="col-12 col-md-6 col-xl-3">
+                                    <label class="form-label" for="interaction-filter-from">Начало периода</label>
+                                    <input id="interaction-filter-from" class="form-control" type="date" @bind="interactionFilter.FromDate" @bind:after="ApplyInteractionFiltersAsync" />
                                 </div>
-                                <div class="small text-muted mb-2">Зарегистрировал(а): @interaction.UserName</div>
-                                <p class="mb-0">@interaction.Content</p>
-                            </article>
+                                <div class="col-12 col-md-6 col-xl-3">
+                                    <label class="form-label" for="interaction-filter-to">Окончание периода</label>
+                                    <input id="interaction-filter-to" class="form-control" type="date" @bind="interactionFilter.ToDate" @bind:after="ApplyInteractionFiltersAsync" />
+                                </div>
+                            }
+                        </div>
+                        @if (interactionFilterError is not null)
+                        {
+                            <div class="alert alert-warning mt-3 mb-0" role="alert">@interactionFilterError</div>
                         }
                     </div>
-                }
+
+                    @if (interactions.Count == 0 && !HasInteractionFilters)
+                    {
+                        <p class="text-muted mb-0">История взаимодействий пока пуста.</p>
+                    }
+                    else if (interactions.Count == 0)
+                    {
+                        <p class="text-muted mb-0">По выбранным фильтрам взаимодействия не найдены.</p>
+                    }
+                    else
+                    {
+                        <div class="list-group interaction-history-list">
+                            @foreach (var interaction in interactions)
+                            {
+                                <article class="list-group-item interaction-history-item" @key="interaction.Id">
+                                    <div class="d-flex justify-content-between flex-wrap gap-2">
+                                        <strong>@GetChannelName(interaction.Channel)</strong>
+                                        <time datetime="@interaction.CreatedAt.ToString("O")">
+                                            @interaction.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+                                        </time>
+                                    </div>
+                                    <div class="small text-muted mb-2">Зарегистрировал(а): @interaction.UserName</div>
+                                    <p class="mb-0">@interaction.Content</p>
+                                </article>
+                            }
+                        </div>
+                    }
+                </div>
             </section>
-        </div>
-    </div>
 }
+</main>
+
+<style>
+    .request-details-container {
+        width: 100%;
+        max-width: 68rem;
+        min-width: 0;
+    }
+
+    .request-details-card,
+    .interaction-filter-panel,
+    .interaction-history-item {
+        min-width: 0;
+        border-color: #dfe5ec;
+        border-radius: 0.65rem;
+    }
+
+    .request-details-card .card-body {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .request-edit-form {
+        max-width: 42rem;
+    }
+
+    .request-edit-form .form-select,
+    .interaction-entry-form .form-select,
+    .interaction-entry-form .form-control {
+        max-width: 100%;
+    }
+
+    .interaction-filter-panel {
+        border: 1px solid #e4e9ef;
+        border-radius: 0.55rem;
+        background-color: #f8fafc;
+        padding: 1rem;
+    }
+
+    .interaction-filter-panel .form-label {
+        margin-bottom: 0.35rem;
+        color: #344256;
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+
+    .interaction-entry-form {
+        max-width: 48rem;
+        margin-top: 1rem;
+    }
+
+    .interaction-entry-form textarea {
+        min-height: 7rem;
+        resize: vertical;
+    }
+
+    .interaction-history-list {
+        gap: 0.5rem;
+    }
+
+    .interaction-history-item {
+        padding: 0.75rem 1rem;
+        overflow-wrap: anywhere;
+    }
+
+    .interaction-history-item time {
+        color: #667487;
+        font-size: 0.875rem;
+    }
+
+    .interaction-history-item p {
+        line-height: 1.45;
+    }
+
+    @@media (max-width: 575.98px) {
+        .interaction-filter-panel {
+            padding: 0.75rem;
+        }
+    }
+</style>
 
 @code {
     [Parameter]
@@ -176,7 +324,10 @@ else
 
     private RequestDetailsItem? request;
     private List<RequestAssigneeItem> activeUsers = [];
+    private List<InteractionUserItem> interactionAuthors = [];
     private List<InteractionHistoryItem> interactions = [];
+    private InteractionHistoryFilter interactionFilter = new();
+    private string? interactionFilterError;
     private InteractionFormModel interactionForm = CreateInteractionForm();
     private bool isSaving;
     private bool saveSucceeded;
@@ -189,9 +340,13 @@ else
     {
         request = await RequestService.GetRequestByIdAsync(id);
         activeUsers = await RequestService.GetActiveUsersAsync();
+        interactionAuthors = request is null
+            ? []
+            : await InteractionService.GetInteractionAuthorsByRequestIdAsync(request.Id);
+        interactionFilter = new InteractionHistoryFilter();
         interactions = request is null
             ? []
-            : await InteractionService.GetInteractionsByRequestIdAsync(request.Id);
+            : await InteractionService.GetInteractionsByRequestIdAsync(request.Id, interactionFilter);
         interactionForm = CreateInteractionForm();
         message = null;
         interactionMessage = null;
@@ -231,6 +386,36 @@ else
         }
     }
 
+    private bool HasInteractionFilters =>
+        interactionFilter.UserId.HasValue ||
+        interactionFilter.Channel.HasValue ||
+        interactionFilter.Period != InteractionDatePeriod.AllTime;
+
+    private async Task ApplyInteractionFiltersAsync()
+    {
+        interactionFilterError = null;
+        if (interactionFilter.Period == InteractionDatePeriod.Custom &&
+            interactionFilter.FromDate.HasValue &&
+            interactionFilter.ToDate.HasValue &&
+            interactionFilter.FromDate.Value.Date > interactionFilter.ToDate.Value.Date)
+        {
+            interactionFilterError = "Дата начала периода не может быть позже даты окончания.";
+            interactions = [];
+            return;
+        }
+
+        if (request is not null)
+        {
+            interactions = await InteractionService.GetInteractionsByRequestIdAsync(request.Id, interactionFilter);
+        }
+    }
+
+    private async Task ResetInteractionFiltersAsync()
+    {
+        interactionFilter = new InteractionHistoryFilter();
+        await ApplyInteractionFiltersAsync();
+    }
+
     private async Task AddInteractionAsync()
     {
         if (request is null)
@@ -257,7 +442,7 @@ else
                 return;
             }
 
-            interactions = await InteractionService.GetInteractionsByRequestIdAsync(request.Id);
+            await ApplyInteractionFiltersAsync();
             interactionForm = CreateInteractionForm();
             interactionMessage = "Взаимодействие добавлено.";
         }

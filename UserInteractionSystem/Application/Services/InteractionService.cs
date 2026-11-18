@@ -19,11 +19,76 @@ public class InteractionService
         _userService = userService;
     }
 
-    public async Task<List<InteractionHistoryItem>> GetInteractionsByRequestIdAsync(int requestId)
+    public async Task<List<InteractionHistoryItem>> GetInteractionsByRequestIdAsync(
+        int requestId,
+        InteractionHistoryFilter? filter = null)
     {
-        return await _dbContext.Interactions
+        filter ??= new InteractionHistoryFilter();
+        var query = _dbContext.Interactions
             .AsNoTracking()
-            .Where(interaction => interaction.RequestId == requestId)
+            .Where(interaction => interaction.RequestId == requestId);
+
+        if (filter.UserId.HasValue)
+        {
+            query = query.Where(interaction => interaction.UserId == filter.UserId.Value);
+        }
+
+        if (filter.Channel.HasValue)
+        {
+            query = query.Where(interaction => interaction.Channel == filter.Channel.Value);
+        }
+
+        DateTime? fromUtc = null;
+        DateTime? toUtcExclusive = null;
+        var nowUtc = DateTime.UtcNow;
+        switch (filter.Period)
+        {
+            case InteractionDatePeriod.Today:
+                var localToday = DateTime.Today;
+                fromUtc = localToday.ToUniversalTime();
+                toUtcExclusive = localToday.AddDays(1).ToUniversalTime();
+                break;
+            case InteractionDatePeriod.Last7Days:
+                fromUtc = nowUtc.AddDays(-7);
+                toUtcExclusive = nowUtc;
+                break;
+            case InteractionDatePeriod.LastMonth:
+                fromUtc = nowUtc.AddMonths(-1);
+                toUtcExclusive = nowUtc;
+                break;
+            case InteractionDatePeriod.Custom:
+                if (filter.FromDate.HasValue)
+                {
+                    fromUtc = DateTime.SpecifyKind(filter.FromDate.Value.Date, DateTimeKind.Local).ToUniversalTime();
+                }
+
+                if (filter.ToDate.HasValue)
+                {
+                    toUtcExclusive = DateTime.SpecifyKind(
+                        filter.ToDate.Value.Date.AddDays(1),
+                        DateTimeKind.Local).ToUniversalTime();
+                }
+
+                if (filter.FromDate.HasValue && filter.ToDate.HasValue &&
+                    filter.FromDate.Value.Date > filter.ToDate.Value.Date)
+                {
+                    return [];
+                }
+
+                break;
+        }
+
+        if (fromUtc.HasValue)
+        {
+            query = query.Where(interaction => interaction.CreatedAt >= fromUtc.Value);
+        }
+
+        if (toUtcExclusive.HasValue)
+        {
+            query = query.Where(interaction => interaction.CreatedAt < toUtcExclusive.Value);
+        }
+
+        return await query
             .Join(
                 _dbContext.Users,
                 interaction => interaction.UserId,
@@ -36,8 +101,8 @@ public class InteractionService
                     CreatedAt = interaction.CreatedAt,
                     UserName = user.FullName
                 })
-            .OrderBy(interaction => interaction.CreatedAt)
-            .ThenBy(interaction => interaction.Id)
+            .OrderByDescending(interaction => interaction.CreatedAt)
+            .ThenByDescending(interaction => interaction.Id)
             .ToListAsync();
     }
 
@@ -46,6 +111,21 @@ public class InteractionService
         return await _dbContext.Users
             .AsNoTracking()
             .Where(user => user.IsActive)
+            .OrderBy(user => user.FullName)
+            .Select(user => new InteractionUserItem
+            {
+                Id = user.Id,
+                FullName = user.FullName
+            })
+            .ToListAsync();
+    }
+
+    public async Task<List<InteractionUserItem>> GetInteractionAuthorsByRequestIdAsync(int requestId)
+    {
+        return await _dbContext.Users
+            .AsNoTracking()
+            .Where(user => _dbContext.Interactions.Any(interaction =>
+                interaction.RequestId == requestId && interaction.UserId == user.Id))
             .OrderBy(user => user.FullName)
             .Select(user => new InteractionUserItem
             {
