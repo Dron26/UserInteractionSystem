@@ -16,6 +16,8 @@ public class User
 
     public bool IsActive { get; set; } = true;
 
+    public bool IsArchived { get; set; }
+
     public bool MustChangePassword { get; set; }
 
     public DateTime? TemporaryPasswordExpiresAtUtc { get; set; }

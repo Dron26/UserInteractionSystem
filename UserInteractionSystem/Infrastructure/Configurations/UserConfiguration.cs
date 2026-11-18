@@ -14,6 +14,10 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .IsRequired()
             .HasMaxLength(100);
 
+        builder.HasIndex(u => u.UserName)
+            .IsUnique()
+            .HasDatabaseName("IX_Users_UserName");
+
         builder.Property(u => u.PasswordHash)
             .IsRequired();
 
@@ -22,6 +26,9 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .HasMaxLength(200);
 
         builder.Property(u => u.MustChangePassword)
+            .HasDefaultValue(false);
+
+        builder.Property(u => u.IsArchived)
             .HasDefaultValue(false);
     }
 }

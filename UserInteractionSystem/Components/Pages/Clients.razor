@@ -1,6 +1,7 @@
 @page "/clients"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
 @using UserInteractionSystem.Application.Models
 @inject UserInteractionSystem.Application.Services.ClientService ClientService
 @inject AuthenticationStateProvider AuthenticationStateProvider
@@ -15,7 +16,7 @@
         <h2 id="client-create-heading" class="h5 mb-0">&#1044;&#1086;&#1073;&#1072;&#1074;&#1080;&#1090;&#1100; &#1082;&#1083;&#1080;&#1077;&#1085;&#1090;&#1072;</h2>
     </div>
     <div class="card-body">
-        <EditForm Model="newClient" OnValidSubmit="AddClient" FormName="client-form" class="client-create-form">
+        <EditForm @key="createClientEditContext" EditContext="createClientEditContext" OnValidSubmit="AddClient" FormName="client-form" class="client-create-form">
             <DataAnnotationsValidator />
             <ValidationSummary class="validation-summary" />
 
@@ -28,6 +29,7 @@
             <div class="mb-3">
                 <label class="form-label" for="new-client-phone">&#1058;&#1077;&#1083;&#1077;&#1092;&#1086;&#1085;</label>
                 <InputText id="new-client-phone" class="form-control" @bind-Value="newClient.Phone" />
+                <ValidationMessage For="@(() => newClient.Phone)" />
             </div>
 
             <div class="mb-3">
@@ -39,10 +41,11 @@
             <div class="mb-3">
                 <label class="form-label" for="new-client-comment">&#1050;&#1086;&#1084;&#1084;&#1077;&#1085;&#1090;&#1072;&#1088;&#1080;&#1081;</label>
                 <InputTextArea id="new-client-comment" class="form-control" @bind-Value="newClient.Comment" />
+                <ValidationMessage For="@(() => newClient.Comment)" />
             </div>
 
             <button type="submit" class="btn btn-primary me-2">&#1044;&#1086;&#1073;&#1072;&#1074;&#1080;&#1090;&#1100; &#1082;&#1083;&#1080;&#1077;&#1085;&#1090;&#1072;</button>
-            <a class="btn btn-outline-secondary" href="/clients">&#1054;&#1090;&#1084;&#1077;&#1085;&#1072;</a>
+            <button type="button" class="btn btn-outline-secondary" @onclick="ClearCreateClientForm">&#1054;&#1095;&#1080;&#1089;&#1090;&#1080;&#1090;&#1100;</button>
         </EditForm>
     </div>
 </section>
@@ -185,12 +188,14 @@ else
 @code {
     private List<Client> clients = [];
     private ClientListFilter filter = new();
+    private EditContext createClientEditContext = default!;
     private bool operationSucceeded;
     private string? operationMessage;
     private string? filterError;
 
     protected override async Task OnInitializedAsync()
     {
+        createClientEditContext = new EditContext(newClient);
         await LoadClients();
     }
 
@@ -210,6 +215,19 @@ else
     private async Task LoadClients()
     {
         clients = await ClientService.GetClientsAsync(filter);
+    }
+
+    private void ResetCreateClientForm()
+    {
+        newClient = new Client { FullName = string.Empty };
+        createClientEditContext = new EditContext(newClient);
+    }
+
+    private void ClearCreateClientForm()
+    {
+        ResetCreateClientForm();
+        operationMessage = null;
+        operationSucceeded = false;
     }
 
     private async Task ApplyFiltersAsync()
@@ -248,7 +266,7 @@ else
         if (operationSucceeded)
         {
             await LoadClients();
-            newClient = new Client { FullName = string.Empty };
+            ResetCreateClientForm();
         }
     }
 

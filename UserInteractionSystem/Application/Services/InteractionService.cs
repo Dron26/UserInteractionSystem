@@ -110,7 +110,7 @@ public class InteractionService
     {
         return await _dbContext.Users
             .AsNoTracking()
-            .Where(user => user.IsActive)
+            .Where(user => user.IsActive && !user.IsArchived)
             .OrderBy(user => user.FullName)
             .Select(user => new InteractionUserItem
             {
@@ -142,6 +142,7 @@ public class InteractionService
         string? content,
         DateTime? contactedAt)
     {
+        var trimmedContent = content?.Trim();
         if (currentUser?.Identity?.IsAuthenticated != true ||
             !int.TryParse(
                 currentUser.FindFirst("UserId")?.Value,
@@ -149,16 +150,20 @@ public class InteractionService
                 CultureInfo.InvariantCulture,
                 out var userId) ||
             !Enum.IsDefined(channel) ||
-            string.IsNullOrWhiteSpace(content) ||
+            string.IsNullOrEmpty(trimmedContent) ||
+            trimmedContent.Length > 5000 ||
             contactedAt is null)
         {
             return false;
         }
 
-        var requestExists = await _dbContext.Requests
-            .AnyAsync(request => request.Id == requestId);
+        var requestStatus = await _dbContext.Requests
+            .Where(request => request.Id == requestId)
+            .Select(request => (RequestStatus?)request.Status)
+            .FirstOrDefaultAsync();
 
-        if (!requestExists)
+        if (requestStatus is null ||
+            requestStatus is RequestStatus.Completed or RequestStatus.Cancelled)
         {
             return false;
         }
@@ -177,7 +182,7 @@ public class InteractionService
             RequestId = requestId,
             UserId = activeUser.Id,
             Channel = channel,
-            Content = content.Trim(),
+            Content = trimmedContent,
             CreatedAt = contactedAt.Value.ToUniversalTime()
         };
 

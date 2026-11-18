@@ -25,7 +25,7 @@
         <h2 id="user-create-heading" class="h5 mb-0">@(isFirstUser ? "Первый администратор" : "Создать пользователя")</h2>
     </div>
     <div class="card-body">
-        <EditForm Model="newUser" OnValidSubmit="CreateUserAsync" FormName="user-create-form">
+        <EditForm @key="createUserEditContext" EditContext="createUserEditContext" OnValidSubmit="CreateUserAsync" FormName="user-create-form">
             <DataAnnotationsValidator />
             <ValidationSummary />
 
@@ -64,8 +64,11 @@
                 </div>
             }
 
-            <button type="submit" class="btn btn-primary" disabled="@isSaving">
+            <button type="submit" class="btn btn-primary me-2" disabled="@isSaving">
                 @(isSaving ? "Сохранение..." : "Создать пользователя")
+            </button>
+            <button type="button" class="btn btn-outline-secondary" @onclick="ClearCreateForm" disabled="@isSaving">
+                Очистить
             </button>
         </EditForm>
 
@@ -79,9 +82,42 @@
 </section>
 
 <h2 class="h4">Список сотрудников</h2>
+<section class="card mb-3" aria-label="Фильтры сотрудников">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-12 col-md-6 col-xl-4">
+                <label class="form-label" for="user-search-filter">Поиск по ФИО или логину</label>
+                <input id="user-search-filter" class="form-control" type="search" @bind="userSearch" @bind:event="oninput" />
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <label class="form-label" for="user-role-filter">Роль</label>
+                <select id="user-role-filter" class="form-select" @bind="roleFilter">
+                    <option value="all">Все роли</option>
+                    <option value="admin">Администраторы</option>
+                    <option value="employee">Сотрудники</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-xl-3">
+                <label class="form-label" for="user-state-filter">Состояние</label>
+                <select id="user-state-filter" class="form-select" @bind="archiveFilter">
+                    <option value="all">Все</option>
+                    <option value="active">Активные</option>
+                    <option value="archived">Архивные</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-6 col-xl-2">
+                <button type="button" class="btn btn-outline-secondary w-100" @onclick="ResetUserFilters">Сбросить</button>
+            </div>
+        </div>
+    </div>
+</section>
 @if (users.Count == 0)
 {
     <p class="text-muted">Список пока пуст.</p>
+}
+else if (!FilteredUsers.Any())
+{
+    <p class="text-muted">Сотрудники по заданным фильтрам не найдены.</p>
 }
 else
 {
@@ -98,7 +134,7 @@ else
                 </tr>
             </thead>
             <tbody>
-                @foreach (var user in users)
+                @foreach (var user in FilteredUsers)
                 {
                     <tr @key="user.Id">
                         <td>
@@ -109,8 +145,8 @@ else
                         </td>
                         <td>@GetRoleName(user.Role)</td>
                         <td>
-                            <span class="badge @(user.IsActive ? "text-bg-success" : "text-bg-secondary")">
-                                @(user.IsActive ? "Активен" : "Неактивен")
+                            <span class="badge @(user.IsArchived ? "text-bg-dark" : user.IsActive ? "text-bg-success" : "text-bg-secondary")">
+                                @(user.IsArchived ? "В архиве" : user.IsActive ? "Активен" : "Неактивен")
                             </span>
                         </td>
                         <td>@user.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy")</td>
@@ -119,11 +155,29 @@ else
                                 <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => SaveUserAsync(user)" disabled="@isSaving">
                                     Сохранить
                                 </button>
-                                <button type="button" class="btn btn-sm @(user.IsActive ? "btn-outline-danger" : "btn-outline-success")" @onclick="() => ToggleUserAsync(user)" disabled="@isSaving">
-                                    @(user.IsActive ? "Деактивировать" : "Активировать")
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-warning" @onclick="() => ResetPasswordAsync(user)" disabled="@(isSaving || user.Id == currentUserId || !user.IsActive)" title="@(user.Id == currentUserId ? "Нельзя сбросить собственный пароль" : !user.IsActive ? "Нельзя сбросить пароль неактивного пользователя" : null)">
-                                    Сбросить пароль
+                                @if (user.IsArchived)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-success" @onclick="() => RestoreUserAsync(user)" disabled="@isSaving">
+                                        Восстановить
+                                    </button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="btn btn-sm @(user.IsActive ? "btn-outline-danger" : "btn-outline-success")" @onclick="() => ToggleUserAsync(user)" disabled="@isSaving">
+                                        @(user.IsActive ? "Деактивировать" : "Активировать")
+                                    </button>
+                                    @if (user.IsActive)
+                                    {
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => ArchiveUserAsync(user)" disabled="@(isSaving || user.Id == currentUserId)" title="@(user.Id == currentUserId ? "Нельзя архивировать собственную учётную запись" : null)">
+                                            В архив
+                                        </button>
+                                    }
+                                    <button type="button" class="btn btn-sm btn-outline-warning" @onclick="() => ResetPasswordAsync(user)" disabled="@(isSaving || user.Id == currentUserId || !user.IsActive)" title="@(user.Id == currentUserId ? "Нельзя сбросить собственный пароль" : !user.IsActive ? "Нельзя сбросить пароль неактивного пользователя" : null)">
+                                        Сбросить пароль
+                                    </button>
+                                }
+                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => DeleteUserAsync(user)" disabled="@(isSaving || user.Id == currentUserId)" title="@(user.Id == currentUserId ? "Нельзя удалить собственную учётную запись" : null)">
+                                    Удалить
                                 </button>
                             </div>
                         </td>
@@ -160,9 +214,13 @@ else
 @code {
     private List<UserListItem> users = [];
     private UserCreateModel newUser = new();
+    private EditContext createUserEditContext = default!;
     private bool isFirstUser;
     private bool isSaving;
     private int currentUserId;
+    private string userSearch = string.Empty;
+    private string roleFilter = "all";
+    private string archiveFilter = "all";
     private bool createSucceeded;
     private bool listOperationSucceeded;
     private string? createMessage;
@@ -171,11 +229,30 @@ else
     private string? temporaryPasswordUserName;
     private string? copyMessage;
 
+    private IEnumerable<UserListItem> FilteredUsers
+    {
+        get
+        {
+            var search = userSearch.Trim();
+            return users.Where(user =>
+                (string.IsNullOrEmpty(search) ||
+                    user.FullName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    user.UserName.Contains(search, StringComparison.OrdinalIgnoreCase)) &&
+                (roleFilter == "all" ||
+                    roleFilter == "admin" && user.Role == UserRole.Admin ||
+                    roleFilter == "employee" && user.Role == UserRole.Employee) &&
+                (archiveFilter == "all" ||
+                    archiveFilter == "archived" && user.IsArchived ||
+                    archiveFilter == "active" && user.IsActive && !user.IsArchived));
+        }
+    }
+
     protected override async Task OnInitializedAsync()
     {
         var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         int.TryParse(authenticationState.User.FindFirst("UserId")?.Value, out currentUserId);
         await LoadUsersAsync();
+        createUserEditContext = new EditContext(newUser);
     }
 
     private async Task LoadUsersAsync()
@@ -186,6 +263,24 @@ else
         {
             newUser.Role = UserRole.Admin;
         }
+    }
+
+    private void ResetUserFilters()
+    {
+        userSearch = string.Empty;
+        roleFilter = "all";
+        archiveFilter = "all";
+    }
+
+    private void ClearCreateForm()
+    {
+        newUser = new UserCreateModel
+        {
+            Role = isFirstUser ? UserRole.Admin : UserRole.Employee
+        };
+        createUserEditContext = new EditContext(newUser);
+        createMessage = null;
+        createSucceeded = false;
     }
 
     private async Task CreateUserAsync()
@@ -204,7 +299,12 @@ else
             createSucceeded = await UserService.AddUserAsync(newUser, authenticationState.User);
             if (!createSucceeded)
             {
-                createMessage = "Не удалось создать пользователя. Проверьте данные, права администратора и активность своей учётной записи.";
+                var userName = newUser.UserName.Trim();
+                var existingUsers = await UserService.GetUsersAsync();
+                createMessage = existingUsers.Any(user =>
+                    string.Equals(user.UserName, userName, StringComparison.Ordinal))
+                    ? "Пользователь с таким логином уже существует"
+                    : "Не удалось создать пользователя. Проверьте данные, права администратора и активность своей учётной записи.";
                 return;
             }
 
@@ -213,6 +313,7 @@ else
                 : "Пользователь создан.";
             newUser = new UserCreateModel { Role = UserRole.Employee };
             await LoadUsersAsync();
+            createUserEditContext = new EditContext(newUser);
         }
         finally
         {
@@ -265,6 +366,94 @@ else
             if (listOperationSucceeded)
             {
                 await LoadUsersAsync();
+            }
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task ArchiveUserAsync(UserListItem user)
+    {
+        isSaving = true;
+        listMessage = null;
+
+        try
+        {
+            var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            listOperationSucceeded = await UserService.ArchiveUserAsync(user.Id, authenticationState.User);
+            listMessage = listOperationSucceeded
+                ? "Пользователь перемещён в архив. Связанные заявки и взаимодействия сохранены."
+                : user.Role == UserRole.Admin && users.Count(candidate =>
+                    candidate.Role == UserRole.Admin && candidate.IsActive && !candidate.IsArchived) <= 1
+                    ? "Нельзя архивировать последнего активного администратора."
+                    : "Не удалось архивировать пользователя. Проверьте права администратора и активность учётной записи.";
+
+            if (listOperationSucceeded)
+            {
+                await LoadUsersAsync();
+            }
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task RestoreUserAsync(UserListItem user)
+    {
+        isSaving = true;
+        listMessage = null;
+
+        try
+        {
+            var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            listOperationSucceeded = await UserService.RestoreUserAsync(user.Id, authenticationState.User);
+            listMessage = listOperationSucceeded
+                ? "Пользователь восстановлен из архива."
+                : "Не удалось восстановить пользователя. Проверьте права администратора и активность учётной записи.";
+
+            if (listOperationSucceeded)
+            {
+                await LoadUsersAsync();
+            }
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task DeleteUserAsync(UserListItem user)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>(
+            "confirm",
+            $"Удалить пользователя {user.FullName} ({user.UserName})? Это действие необратимо.");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        isSaving = true;
+        listMessage = null;
+
+        try
+        {
+            var authenticationState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            listOperationSucceeded = await UserService.DeleteUserAsync(user.Id, authenticationState.User);
+            if (listOperationSucceeded)
+            {
+                listMessage = "Пользователь удалён.";
+                await LoadUsersAsync();
+            }
+            else if (await UserService.HasUserHistoryAsync(user.Id, authenticationState.User))
+            {
+                listMessage = "У сотрудника есть связанные заявки или взаимодействия. Его можно только архивировать.";
+            }
+            else
+            {
+                listMessage = "Не удалось удалить пользователя. Проверьте права администратора и ограничения безопасности.";
             }
         }
         finally

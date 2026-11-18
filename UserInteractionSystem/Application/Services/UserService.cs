@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using UserInteractionSystem.Application.Models;
 using UserInteractionSystem.Domain.Entities;
@@ -61,13 +62,14 @@ public class UserService
             .Select(candidate => new
             {
                 candidate.IsActive,
+                candidate.IsArchived,
                 candidate.Role,
                 candidate.MustChangePassword,
                 candidate.TemporaryPasswordExpiresAtUtc
             })
             .FirstOrDefaultAsync();
 
-        if (user is null || !user.IsActive || user.Role != claimedRole)
+        if (user is null || !user.IsActive || user.IsArchived || user.Role != claimedRole)
         {
             return false;
         }
@@ -107,13 +109,14 @@ public class UserService
             .Select(candidate => new
             {
                 candidate.IsActive,
+                candidate.IsArchived,
                 candidate.Role,
                 candidate.MustChangePassword,
                 candidate.TemporaryPasswordExpiresAtUtc
             })
             .FirstOrDefaultAsync();
 
-        if (user is null || !user.IsActive || user.Role != claimedRole)
+        if (user is null || !user.IsActive || user.IsArchived || user.Role != claimedRole)
         {
             return null;
         }
@@ -154,9 +157,8 @@ public class UserService
         };
         user.PasswordHash = _passwordHasher.HashPassword(user, password);
 
-        var normalizedUserName = user.UserName.ToLowerInvariant();
         var userNameExists = await _dbContext.Users
-            .AnyAsync(existingUser => existingUser.UserName.ToLower() == normalizedUserName);
+    .AnyAsync(existingUser => existingUser.UserName == user.UserName);
 
         if (userNameExists)
         {
@@ -177,10 +179,10 @@ public class UserService
             return null;
         }
 
-        var normalizedUserName = userName.Trim().ToLowerInvariant();
+        var normalizedUserName = userName.Trim();
         var user = await _dbContext.Users
             .AsNoTracking()
-            .FirstOrDefaultAsync(candidate => candidate.UserName.ToLower() == normalizedUserName);
+            .FirstOrDefaultAsync(candidate => candidate.UserName == normalizedUserName);
 
         if (user is null)
         {
@@ -197,7 +199,7 @@ public class UserService
             return null;
         }
 
-        if (verificationResult == PasswordVerificationResult.Failed || !user.IsActive ||
+        if (verificationResult == PasswordVerificationResult.Failed || !user.IsActive || user.IsArchived ||
             (user.MustChangePassword &&
                 (user.TemporaryPasswordExpiresAtUtc is not DateTime temporaryExpiry ||
                     temporaryExpiry <= DateTime.UtcNow)))
@@ -235,7 +237,7 @@ public class UserService
 
         var user = await _dbContext.Users
             .AsNoTracking()
-            .FirstOrDefaultAsync(candidate => candidate.Id == userId && candidate.IsActive);
+            .FirstOrDefaultAsync(candidate => candidate.Id == userId && candidate.IsActive && !candidate.IsArchived);
         if (user is null)
         {
             return null;
@@ -254,7 +256,7 @@ public class UserService
         }
 
         var updatedRows = await _dbContext.Users
-            .Where(candidate => candidate.Id == userId && candidate.IsActive)
+            .Where(candidate => candidate.Id == userId && candidate.IsActive && !candidate.IsArchived)
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(candidate => candidate.PasswordHash, passwordHash)
                 .SetProperty(candidate => candidate.MustChangePassword, true)
@@ -322,6 +324,7 @@ public class UserService
                 UserName = user.UserName,
                 Role = user.Role,
                 IsActive = user.IsActive,
+                IsArchived = user.IsArchived,
                 CreatedAt = user.CreatedAt
             })
             .ToListAsync();
@@ -343,9 +346,8 @@ public class UserService
 
         var fullName = model.FullName.Trim();
         var userName = model.UserName.Trim();
-        var normalizedUserName = userName.ToLowerInvariant();
         var userNameExists = await _dbContext.Users
-            .AnyAsync(user => user.UserName.ToLower() == normalizedUserName);
+     .AnyAsync(user => user.UserName == userName);
 
         if (userNameExists)
         {
@@ -374,7 +376,20 @@ public class UserService
         }
 
         await _dbContext.Users.AddAsync(user);
-        return await _dbContext.SaveChangesAsync() > 0;
+        try
+        {
+            return await _dbContext.SaveChangesAsync() > 0;
+        }
+        catch (DbUpdateException exception) when (
+            exception.InnerException is SqliteException
+            {
+                SqliteErrorCode: 19,
+                SqliteExtendedErrorCode: 2067
+            })
+        {
+            _dbContext.Entry(user).State = EntityState.Detached;
+            return false;
+        }
     }
 
     public async Task<bool> UpdateUserAsync(
@@ -397,11 +412,11 @@ public class UserService
             return false;
         }
 
-        var normalizedUserName = userName.Trim().ToLowerInvariant();
+        var normalizedUserName = userName.Trim();
         var userNameExists = await _dbContext.Users
             .AnyAsync(existingUser =>
                 existingUser.Id != userId &&
-                existingUser.UserName.ToLower() == normalizedUserName);
+                existingUser.UserName == normalizedUserName);
 
         if (userNameExists)
         {
@@ -436,6 +451,11 @@ public class UserService
             return false;
         }
 
+        if (user.IsArchived)
+        {
+            return false;
+        }
+
         if (user.IsActive == isActive)
         {
             return await IsAuthenticatedUserCurrentAsync(currentUser, UserRole.Admin);
@@ -456,7 +476,7 @@ public class UserService
                     AND (
                         SELECT COUNT(*)
                         FROM "Users"
-                        WHERE "Role" = {(int)UserRole.Admin} AND "IsActive" <> 0
+                        WHERE "Role" = {(int)UserRole.Admin} AND "IsActive" <> 0 AND "IsArchived" = 0
                     ) > 1
                 """);
 
@@ -471,5 +491,96 @@ public class UserService
 
         user.IsActive = isActive;
         return await _dbContext.SaveChangesAsync() > 0;
+    }
+
+    public async Task<bool> ArchiveUserAsync(int userId, ClaimsPrincipal? currentUser)
+    {
+        var currentUserIdValue = currentUser?.FindFirst("UserId")?.Value;
+        if (userId <= 0 ||
+            !int.TryParse(currentUserIdValue, NumberStyles.None, CultureInfo.InvariantCulture, out var currentUserId) ||
+            userId == currentUserId ||
+            !await IsAuthenticatedUserCurrentAsync(currentUser, UserRole.Admin))
+        {
+            return false;
+        }
+
+        var updatedRows = await _dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+            UPDATE "Users"
+            SET "IsArchived" = 1
+            WHERE "Id" = {userId}
+                AND "IsArchived" = 0
+                AND "IsActive" <> 0
+                AND (
+                    "Role" <> {(int)UserRole.Admin}
+                    OR (
+                        SELECT COUNT(*)
+                        FROM "Users"
+                        WHERE "Role" = {(int)UserRole.Admin}
+                            AND "IsActive" <> 0
+                            AND "IsArchived" = 0
+                    ) > 1
+                )
+            """);
+
+        return updatedRows == 1;
+    }
+
+    public async Task<bool> RestoreUserAsync(int userId, ClaimsPrincipal? currentUser)
+    {
+        if (userId <= 0 || !await IsAuthenticatedUserCurrentAsync(currentUser, UserRole.Admin))
+        {
+            return false;
+        }
+
+        var updatedRows = await _dbContext.Users
+            .Where(user => user.Id == userId && user.IsArchived)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(user => user.IsArchived, false));
+
+        return updatedRows == 1;
+    }
+
+    public async Task<bool> DeleteUserAsync(int userId, ClaimsPrincipal? currentUser)
+    {
+        var currentUserIdValue = currentUser?.FindFirst("UserId")?.Value;
+        if (userId <= 0 ||
+            !int.TryParse(currentUserIdValue, NumberStyles.None, CultureInfo.InvariantCulture, out var currentUserId) ||
+            userId == currentUserId ||
+            !await IsAuthenticatedUserCurrentAsync(currentUser, UserRole.Admin))
+        {
+            return false;
+        }
+
+        try
+        {
+            var deletedRows = await _dbContext.Users
+                .Where(user => user.Id == userId &&
+                    !_dbContext.Requests.Any(request => request.ResponsibleUserId == user.Id) &&
+                    !_dbContext.Interactions.Any(interaction => interaction.UserId == user.Id) &&
+                    (user.Role != UserRole.Admin || !user.IsActive || user.IsArchived ||
+                        _dbContext.Users.Any(other =>
+                            other.Id != user.Id &&
+                            other.Role == UserRole.Admin &&
+                            other.IsActive &&
+                            !other.IsArchived)))
+                .ExecuteDeleteAsync();
+
+            return deletedRows == 1;
+        }
+        catch (SqliteException exception) when (
+            exception.SqliteErrorCode == 19 && exception.SqliteExtendedErrorCode == 787)
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> HasUserHistoryAsync(int userId, ClaimsPrincipal? currentUser)
+    {
+        if (userId <= 0 || !await IsAuthenticatedUserCurrentAsync(currentUser, UserRole.Admin))
+        {
+            return false;
+        }
+
+        return await _dbContext.Requests.AnyAsync(request => request.ResponsibleUserId == userId) ||
+            await _dbContext.Interactions.AnyAsync(interaction => interaction.UserId == userId);
     }
 }

@@ -65,6 +65,7 @@ else
             <div>
                 <label>Телефон</label>
                 <InputText @bind-Value="editClient.Phone" />
+                <ValidationMessage For="@(() => editClient.Phone)" />
             </div>
 
             <div>
@@ -76,6 +77,7 @@ else
             <div>
                 <label>Комментарий</label>
                 <InputTextArea @bind-Value="editClient.Comment" />
+                <ValidationMessage For="@(() => editClient.Comment)" />
             </div>
 
             <button type="submit">Сохранить</button>

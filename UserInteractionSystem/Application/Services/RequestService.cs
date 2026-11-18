@@ -30,7 +30,8 @@ public class RequestService
         if (request is null ||
             string.IsNullOrWhiteSpace(request.Title) ||
             request.Title.Trim().Length > 200 ||
-            string.IsNullOrWhiteSpace(request.Description))
+            string.IsNullOrWhiteSpace(request.Description) ||
+            request.Description.Trim().Length > 5000)
         {
             return false;
         }
@@ -46,7 +47,7 @@ public class RequestService
         if (request.ResponsibleUserId.HasValue)
         {
             var responsibleUserIsActive = await _dbContext.Users
-                .AnyAsync(user => user.Id == request.ResponsibleUserId.Value && user.IsActive);
+                .AnyAsync(user => user.Id == request.ResponsibleUserId.Value && user.IsActive && !user.IsArchived);
 
             if (!responsibleUserIsActive)
             {
@@ -238,7 +239,7 @@ public class RequestService
     {
         return await _dbContext.Users
             .AsNoTracking()
-            .Where(user => user.IsActive)
+            .Where(user => user.IsActive && !user.IsArchived)
             .OrderBy(user => user.FullName)
             .Select(user => new RequestAssigneeItem
             {
@@ -263,7 +264,8 @@ public class RequestService
 
         var request = await _dbContext.Requests.FindAsync(requestId);
 
-        if (request is null)
+        if (request is null ||
+            (request.Status != status && !IsAllowedStatusTransition(request.Status, status)))
         {
             return false;
         }
@@ -273,7 +275,7 @@ public class RequestService
             var responsibleUserCanBeKept = await _dbContext.Users
                 .AnyAsync(user =>
                     user.Id == responsibleUserId.Value &&
-                    (user.IsActive || request.ResponsibleUserId == responsibleUserId));
+                    ((user.IsActive && !user.IsArchived) || request.ResponsibleUserId == responsibleUserId));
 
             if (!responsibleUserCanBeKept)
             {
@@ -303,4 +305,13 @@ public class RequestService
 
         return await _dbContext.SaveChangesAsync() > 0;
     }
+
+    private static bool IsAllowedStatusTransition(RequestStatus currentStatus, RequestStatus newStatus) =>
+        (currentStatus, newStatus) switch
+        {
+            (RequestStatus.New, RequestStatus.InProgress or RequestStatus.Cancelled) => true,
+            (RequestStatus.InProgress, RequestStatus.WaitingForClient or RequestStatus.Completed or RequestStatus.Cancelled) => true,
+            (RequestStatus.WaitingForClient, RequestStatus.InProgress or RequestStatus.Completed or RequestStatus.Cancelled) => true,
+            _ => false
+        };
 }

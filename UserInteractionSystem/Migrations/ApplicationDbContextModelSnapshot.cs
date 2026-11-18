@@ -144,6 +144,11 @@ namespace UserInteractionSystem.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("IsArchived")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
+
                     b.Property<bool>("MustChangePassword")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER")
@@ -165,6 +170,10 @@ namespace UserInteractionSystem.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("UserName")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Users_UserName");
 
                     b.ToTable("Users");
                 });

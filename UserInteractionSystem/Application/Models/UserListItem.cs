@@ -19,5 +19,7 @@ public class UserListItem
 
     public bool IsActive { get; set; }
 
+    public bool IsArchived { get; set; }
+
     public DateTime CreatedAt { get; set; }
 }
