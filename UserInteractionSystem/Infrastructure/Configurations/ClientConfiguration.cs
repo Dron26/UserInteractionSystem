@@ -12,13 +12,13 @@ public class ClientConfiguration : IEntityTypeConfiguration<Client>
 
         builder.Property(c => c.FullName)
             .IsRequired()
-            .HasMaxLength(200);
+            .HasMaxLength(150);
 
         builder.Property(c => c.Phone)
-            .HasMaxLength(50);
+            .HasMaxLength(30);
 
         builder.Property(c => c.Email)
-            .HasMaxLength(200);
+            .HasMaxLength(254);
 
         builder.Property(c => c.Comment)
             .HasMaxLength(1000);

@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Security.Claims;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using UserInteractionSystem.Domain.Entities;
 using UserInteractionSystem.Domain.Enums;
@@ -249,8 +251,9 @@ public class RequestService
             .ToListAsync();
     }
 
-    public async Task<bool> UpdateRequestAsync(
+    public async Task<RequestUpdateResult> UpdateRequestAsync(
         int requestId,
+        DateTime expectedUpdatedAt,
         RequestStatus status,
         RequestPriority priority,
         int? responsibleUserId,
@@ -259,15 +262,31 @@ public class RequestService
         if (!Enum.IsDefined(status) ||
             priority is not (RequestPriority.Low or RequestPriority.Normal or RequestPriority.High))
         {
-            return false;
+            return RequestUpdateResult.InvalidData;
         }
 
-        var request = await _dbContext.Requests.FindAsync(requestId);
-
-        if (request is null ||
-            (request.Status != status && !IsAllowedStatusTransition(request.Status, status)))
+        if (!await _userService.IsAuthenticatedUserCurrentAsync(currentUser))
         {
-            return false;
+            return RequestUpdateResult.Unauthorized;
+        }
+
+        var request = await _dbContext.Requests
+            .AsNoTracking()
+            .FirstOrDefaultAsync(candidate => candidate.Id == requestId);
+
+        if (request is null)
+        {
+            return RequestUpdateResult.NotFound;
+        }
+
+        if (ToUtcInstant(request.UpdatedAt) != ToUtcInstant(expectedUpdatedAt))
+        {
+            return RequestUpdateResult.Conflict;
+        }
+
+        if (request.Status != status && !IsAllowedStatusTransition(request.Status, status))
+        {
+            return RequestUpdateResult.InvalidData;
         }
 
         if (responsibleUserId.HasValue)
@@ -279,32 +298,84 @@ public class RequestService
 
             if (!responsibleUserCanBeKept)
             {
-                return false;
+                return RequestUpdateResult.InvalidData;
             }
         }
 
-        if (!await _userService.IsAuthenticatedUserCurrentAsync(currentUser))
+        var previousUpdatedAtUtc = ToUtcInstant(request.UpdatedAt);
+        var updatedAt = DateTime.UtcNow;
+        if (updatedAt <= previousUpdatedAtUtc)
         {
-            return false;
+            updatedAt = previousUpdatedAtUtc.AddTicks(1);
         }
 
-        var now = DateTime.UtcNow;
+        var updateCompletedAt = false;
+        DateTime? completedAt = null;
         if (status == RequestStatus.Completed && request.Status != RequestStatus.Completed)
         {
-            request.CompletedAt = now;
+            completedAt = updatedAt;
+            updateCompletedAt = true;
         }
         else if (status != RequestStatus.Completed)
         {
-            request.CompletedAt = null;
+            updateCompletedAt = true;
         }
 
-        request.Status = status;
-        request.Priority = priority;
-        request.ResponsibleUserId = responsibleUserId;
-        request.UpdatedAt = now;
+        try
+        {
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            var storedUpdatedAt = await _dbContext.Database
+                .SqlQueryRaw<string>(
+                    "SELECT \"UpdatedAt\" AS \"Value\" FROM \"Requests\" WHERE \"Id\" = {0}",
+                    requestId)
+                .SingleOrDefaultAsync();
 
-        return await _dbContext.SaveChangesAsync() > 0;
+            if (storedUpdatedAt is null ||
+                !DateTimeOffset.TryParse(
+                    storedUpdatedAt,
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                    out var storedUpdatedAtUtc) ||
+                storedUpdatedAtUtc.UtcDateTime.Ticks != ToUtcInstant(expectedUpdatedAt).Ticks)
+            {
+                return RequestUpdateResult.Conflict;
+            }
+
+            var affectedRows = await _dbContext.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE "Requests"
+                SET "Status" = {(int)status},
+                    "Priority" = {(int)priority},
+                    "ResponsibleUserId" = {responsibleUserId},
+                    "CompletedAt" = CASE WHEN {updateCompletedAt} THEN {completedAt} ELSE "CompletedAt" END,
+                    "UpdatedAt" = {updatedAt}
+                WHERE "Id" = {requestId}
+                    AND "UpdatedAt" = {storedUpdatedAt}
+                    AND "Status" = {(int)request.Status}
+                    AND "Priority" = {(int)request.Priority}
+                    AND "ResponsibleUserId" IS {request.ResponsibleUserId}
+                """);
+
+            if (affectedRows != 1)
+            {
+                await transaction.RollbackAsync();
+                return RequestUpdateResult.Conflict;
+            }
+
+            await transaction.CommitAsync();
+            return RequestUpdateResult.Success;
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode is 5 or 6)
+        {
+            return RequestUpdateResult.TemporaryFailure;
+        }
     }
+
+    private static DateTime ToUtcInstant(DateTime value) => value.Kind switch
+    {
+        DateTimeKind.Utc => value,
+        DateTimeKind.Local => value.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+    };
 
     private static bool IsAllowedStatusTransition(RequestStatus currentStatus, RequestStatus newStatus) =>
         (currentStatus, newStatus) switch

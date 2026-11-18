@@ -4,6 +4,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Components.Forms
 @using UserInteractionSystem.Application.Models
+@using UserInteractionSystem.Application.Services
 @using UserInteractionSystem.Domain.Enums
 @inject UserInteractionSystem.Application.Services.RequestService RequestService
 @inject UserInteractionSystem.Application.Services.InteractionService InteractionService
@@ -215,10 +216,11 @@ else
                             @foreach (var interaction in interactions)
                             {
                                 <article class="list-group-item interaction-history-item" @key="interaction.Id">
+                                    @{ var createdAtMoscow = InteractionTimeZone.ToMoscowTime(interaction.CreatedAt); }
                                     <div class="d-flex justify-content-between flex-wrap gap-2">
                                         <strong>@GetChannelName(interaction.Channel)</strong>
-                                        <time datetime="@interaction.CreatedAt.ToString("O")">
-                                            @interaction.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+                                        <time datetime="@InteractionTimeZone.AsUtc(interaction.CreatedAt).ToString("O")">
+                                            @createdAtMoscow.ToString("dd.MM.yyyy HH:mm")
                                         </time>
                                     </div>
                                     <div class="small text-muted mb-2">Зарегистрировал(а): @interaction.UserName</div>
@@ -364,16 +366,26 @@ else
 
         try
         {
-            saveSucceeded = await RequestService.UpdateRequestAsync(
+            var updateResult = await RequestService.UpdateRequestAsync(
                 request.Id,
+                request.UpdatedAt,
                 request.Status,
                 request.Priority,
                 request.ResponsibleUserId,
                 (await AuthenticationStateProvider.GetAuthenticationStateAsync()).User);
+            saveSucceeded = updateResult == RequestUpdateResult.Success;
 
             if (!saveSucceeded)
             {
-                message = "Не удалось сохранить изменения. Проверьте данные и актуальность учётной записи: активность и роль.";
+                message = updateResult switch
+                {
+                    RequestUpdateResult.Conflict => "Заявка была изменена другим пользователем. Обновите страницу, чтобы получить актуальные данные, и повторите сохранение",
+                    RequestUpdateResult.Unauthorized => "Не удалось сохранить изменения. Проверьте актуальность учётной записи: активность и роль.",
+                    RequestUpdateResult.InvalidData => "Не удалось сохранить изменения. Проверьте выбранные значения.",
+                    RequestUpdateResult.NotFound => "Заявка не найдена. Обновите страницу.",
+                    RequestUpdateResult.TemporaryFailure => "Не удалось сохранить изменения из-за временной ошибки базы данных. Повторите попытку позже.",
+                    _ => "Не удалось сохранить изменения."
+                };
                 return;
             }
 
@@ -454,7 +466,7 @@ else
 
     private static InteractionFormModel CreateInteractionForm() => new()
     {
-        ContactedAt = DateTime.Now
+        ContactedAt = InteractionTimeZone.GetMoscowNow()
     };
 
     private static string GetChannelName(InteractionChannel channel) => channel switch

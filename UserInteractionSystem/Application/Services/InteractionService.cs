@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Claims;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using UserInteractionSystem.Application.Models;
 using UserInteractionSystem.Domain.Entities;
@@ -41,32 +42,37 @@ public class InteractionService
         DateTime? fromUtc = null;
         DateTime? toUtcExclusive = null;
         var nowUtc = DateTime.UtcNow;
+        var nowMoscow = InteractionTimeZone.ToMoscowTime(nowUtc);
         switch (filter.Period)
         {
             case InteractionDatePeriod.Today:
-                var localToday = DateTime.Today;
-                fromUtc = localToday.ToUniversalTime();
-                toUtcExclusive = localToday.AddDays(1).ToUniversalTime();
+                var startOfMoscowDay = DateTime.SpecifyKind(nowMoscow.Date, DateTimeKind.Unspecified);
+                fromUtc = InteractionTimeZone.ToUtc(startOfMoscowDay);
+                toUtcExclusive = InteractionTimeZone.ToUtc(startOfMoscowDay.AddDays(1));
                 break;
             case InteractionDatePeriod.Last7Days:
-                fromUtc = nowUtc.AddDays(-7);
+                fromUtc = InteractionTimeZone.ToUtc(nowMoscow.AddDays(-7));
                 toUtcExclusive = nowUtc;
                 break;
             case InteractionDatePeriod.LastMonth:
-                fromUtc = nowUtc.AddMonths(-1);
+                fromUtc = InteractionTimeZone.ToUtc(nowMoscow.AddMonths(-1));
                 toUtcExclusive = nowUtc;
                 break;
             case InteractionDatePeriod.Custom:
                 if (filter.FromDate.HasValue)
                 {
-                    fromUtc = DateTime.SpecifyKind(filter.FromDate.Value.Date, DateTimeKind.Local).ToUniversalTime();
+                    var startOfCustomPeriod = DateTime.SpecifyKind(
+                        filter.FromDate.Value.Date,
+                        DateTimeKind.Unspecified);
+                    fromUtc = InteractionTimeZone.ToUtc(startOfCustomPeriod);
                 }
 
                 if (filter.ToDate.HasValue)
                 {
-                    toUtcExclusive = DateTime.SpecifyKind(
+                    var endOfCustomPeriod = DateTime.SpecifyKind(
                         filter.ToDate.Value.Date.AddDays(1),
-                        DateTimeKind.Local).ToUniversalTime();
+                        DateTimeKind.Unspecified);
+                    toUtcExclusive = InteractionTimeZone.ToUtc(endOfCustomPeriod);
                 }
 
                 if (filter.FromDate.HasValue && filter.ToDate.HasValue &&
@@ -157,17 +163,6 @@ public class InteractionService
             return false;
         }
 
-        var requestStatus = await _dbContext.Requests
-            .Where(request => request.Id == requestId)
-            .Select(request => (RequestStatus?)request.Status)
-            .FirstOrDefaultAsync();
-
-        if (requestStatus is null ||
-            requestStatus is RequestStatus.Completed or RequestStatus.Cancelled)
-        {
-            return false;
-        }
-
         var activeUser = await _dbContext.Users
             .FirstOrDefaultAsync(user => user.Id == userId && user.IsActive);
 
@@ -177,16 +172,60 @@ public class InteractionService
             return false;
         }
 
-        var interaction = new Interaction
+        Interaction? interaction = null;
+        try
         {
-            RequestId = requestId,
-            UserId = activeUser.Id,
-            Channel = channel,
-            Content = trimmedContent,
-            CreatedAt = contactedAt.Value.ToUniversalTime()
-        };
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            var requestStatus = await _dbContext.Requests
+                .Where(request => request.Id == requestId)
+                .Select(request => (RequestStatus?)request.Status)
+                .FirstOrDefaultAsync();
 
-        await _dbContext.Interactions.AddAsync(interaction);
-        return await _dbContext.SaveChangesAsync() > 0;
+            if (requestStatus is null ||
+                requestStatus is RequestStatus.Completed or RequestStatus.Cancelled)
+            {
+                return false;
+            }
+
+            interaction = new Interaction
+            {
+                RequestId = requestId,
+                UserId = activeUser.Id,
+                Channel = channel,
+                Content = trimmedContent,
+                CreatedAt = InteractionTimeZone.ToUtc(contactedAt.Value)
+            };
+
+            await _dbContext.Interactions.AddAsync(interaction);
+            if (await _dbContext.SaveChangesAsync() == 0)
+            {
+                await transaction.RollbackAsync();
+                _dbContext.Entry(interaction).State = EntityState.Detached;
+                return false;
+            }
+
+            await transaction.CommitAsync();
+            return true;
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode is 5 or 6)
+        {
+            if (interaction is not null)
+            {
+                _dbContext.Entry(interaction).State = EntityState.Detached;
+            }
+
+            return false;
+        }
+        catch (DbUpdateException exception) when (
+            exception.InnerException is SqliteException sqliteException &&
+            sqliteException.SqliteErrorCode is 5 or 6)
+        {
+            if (interaction is not null)
+            {
+                _dbContext.Entry(interaction).State = EntityState.Detached;
+            }
+
+            return false;
+        }
     }
 }
