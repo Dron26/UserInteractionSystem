@@ -12,11 +12,16 @@ public class ClientService
 {
     private readonly ApplicationDbContext _dbContext;
     private readonly UserService _userService;
+    private readonly TimeProvider _timeProvider;
 
-    public ClientService(ApplicationDbContext dbContext, UserService userService)
+    public ClientService(
+        ApplicationDbContext dbContext,
+        UserService userService,
+        TimeProvider? timeProvider = null)
     {
         _dbContext = dbContext;
         _userService = userService;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<List<Client>> GetClientsAsync(ClientListFilter? filter = null)
@@ -84,14 +89,12 @@ public class ClientService
 
         DateTime? fromUtc = null;
         DateTime? toUtcExclusive = null;
-        var nowUtc = DateTime.UtcNow;
+        var nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
 
         switch (filter.Period)
         {
             case ClientDatePeriod.Today:
-                var localToday = DateTime.Today;
-                fromUtc = localToday.ToUniversalTime();
-                toUtcExclusive = localToday.AddDays(1).ToUniversalTime();
+                (fromUtc, toUtcExclusive) = InteractionTimeZone.GetCurrentMoscowDayBoundsUtc(nowUtc);
                 break;
 
             case ClientDatePeriod.LastWeek:
@@ -107,16 +110,12 @@ public class ClientService
             case ClientDatePeriod.Custom:
                 if (filter.FromDate.HasValue)
                 {
-                    fromUtc = DateTime.SpecifyKind(
-                        filter.FromDate.Value.Date,
-                        DateTimeKind.Local).ToUniversalTime();
+                    fromUtc = InteractionTimeZone.GetMoscowDayBoundsUtc(filter.FromDate.Value).FromUtc;
                 }
 
                 if (filter.ToDate.HasValue)
                 {
-                    toUtcExclusive = DateTime.SpecifyKind(
-                        filter.ToDate.Value.Date.AddDays(1),
-                        DateTimeKind.Local).ToUniversalTime();
+                    toUtcExclusive = InteractionTimeZone.GetMoscowDayBoundsUtc(filter.ToDate.Value).ToUtcExclusive;
                 }
 
                 if (filter.FromDate.HasValue && filter.ToDate.HasValue &&

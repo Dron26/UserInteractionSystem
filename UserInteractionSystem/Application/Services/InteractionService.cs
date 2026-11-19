@@ -13,11 +13,16 @@ public class InteractionService
 {
     private readonly ApplicationDbContext _dbContext;
     private readonly UserService _userService;
+    private readonly TimeProvider _timeProvider;
 
-    public InteractionService(ApplicationDbContext dbContext, UserService userService)
+    public InteractionService(
+        ApplicationDbContext dbContext,
+        UserService userService,
+        TimeProvider? timeProvider = null)
     {
         _dbContext = dbContext;
         _userService = userService;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<List<InteractionHistoryItem>> GetInteractionsByRequestIdAsync(
@@ -41,14 +46,12 @@ public class InteractionService
 
         DateTime? fromUtc = null;
         DateTime? toUtcExclusive = null;
-        var nowUtc = DateTime.UtcNow;
+        var nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
         var nowMoscow = InteractionTimeZone.ToMoscowTime(nowUtc);
         switch (filter.Period)
         {
             case InteractionDatePeriod.Today:
-                var startOfMoscowDay = DateTime.SpecifyKind(nowMoscow.Date, DateTimeKind.Unspecified);
-                fromUtc = InteractionTimeZone.ToUtc(startOfMoscowDay);
-                toUtcExclusive = InteractionTimeZone.ToUtc(startOfMoscowDay.AddDays(1));
+                (fromUtc, toUtcExclusive) = InteractionTimeZone.GetCurrentMoscowDayBoundsUtc(nowUtc);
                 break;
             case InteractionDatePeriod.Last7Days:
                 fromUtc = InteractionTimeZone.ToUtc(nowMoscow.AddDays(-7));
@@ -61,18 +64,12 @@ public class InteractionService
             case InteractionDatePeriod.Custom:
                 if (filter.FromDate.HasValue)
                 {
-                    var startOfCustomPeriod = DateTime.SpecifyKind(
-                        filter.FromDate.Value.Date,
-                        DateTimeKind.Unspecified);
-                    fromUtc = InteractionTimeZone.ToUtc(startOfCustomPeriod);
+                    fromUtc = InteractionTimeZone.GetMoscowDayBoundsUtc(filter.FromDate.Value).FromUtc;
                 }
 
                 if (filter.ToDate.HasValue)
                 {
-                    var endOfCustomPeriod = DateTime.SpecifyKind(
-                        filter.ToDate.Value.Date.AddDays(1),
-                        DateTimeKind.Unspecified);
-                    toUtcExclusive = InteractionTimeZone.ToUtc(endOfCustomPeriod);
+                    toUtcExclusive = InteractionTimeZone.GetMoscowDayBoundsUtc(filter.ToDate.Value).ToUtcExclusive;
                 }
 
                 if (filter.FromDate.HasValue && filter.ToDate.HasValue &&

@@ -54,22 +54,22 @@ public sealed class SqliteDatabaseFixture : IAsyncLifetime
     public UserService CreateUserService(ApplicationDbContext dbContext) =>
         new(dbContext, new PasswordHasher<User>());
 
-    public ClientService CreateClientService(ApplicationDbContext dbContext)
+    public ClientService CreateClientService(ApplicationDbContext dbContext, TimeProvider? timeProvider = null)
     {
         var userService = CreateUserService(dbContext);
-        return new ClientService(dbContext, userService);
+        return new ClientService(dbContext, userService, timeProvider);
     }
 
-    public RequestService CreateRequestService(ApplicationDbContext dbContext)
+    public RequestService CreateRequestService(ApplicationDbContext dbContext, TimeProvider? timeProvider = null)
     {
         var userService = CreateUserService(dbContext);
-        return new RequestService(dbContext, userService);
+        return new RequestService(dbContext, userService, timeProvider);
     }
 
-    public InteractionService CreateInteractionService(ApplicationDbContext dbContext)
+    public InteractionService CreateInteractionService(ApplicationDbContext dbContext, TimeProvider? timeProvider = null)
     {
         var userService = CreateUserService(dbContext);
-        return new InteractionService(dbContext, userService);
+        return new InteractionService(dbContext, userService, timeProvider);
     }
 
     public async Task DisposeAsync()

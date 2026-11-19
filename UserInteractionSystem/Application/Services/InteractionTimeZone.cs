@@ -27,6 +27,18 @@ public static class InteractionTimeZone
         return TimeZoneInfo.ConvertTimeToUtc(moscowLocalTime, MoscowTimeZone);
     }
 
+    public static (DateTime FromUtc, DateTime ToUtcExclusive) GetMoscowDayBoundsUtc(DateTime date)
+    {
+        var startOfMoscowDay = DateTime.SpecifyKind(date.Date, DateTimeKind.Unspecified);
+        return (ToUtc(startOfMoscowDay), ToUtc(startOfMoscowDay.AddDays(1)));
+    }
+
+    public static (DateTime FromUtc, DateTime ToUtcExclusive) GetCurrentMoscowDayBoundsUtc(DateTime utcNow)
+    {
+        var moscowDate = ToMoscowTime(utcNow).Date;
+        return GetMoscowDayBoundsUtc(moscowDate);
+    }
+
     public static DateTime AsUtc(DateTime value) => DateTime.SpecifyKind(value, DateTimeKind.Utc);
 
     public static DateTime ToMoscowTime(DateTime utcValue) =>

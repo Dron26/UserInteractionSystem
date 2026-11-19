@@ -29,8 +29,12 @@ public sealed class RequestServiceTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [Fact]
-    public async Task AddRequestAsync_ActiveClient_CreatesRequestWithInitialValues()
+    [Theory]
+    [InlineData(RequestPriority.Low)]
+    [InlineData(RequestPriority.Normal)]
+    [InlineData(RequestPriority.High)]
+    [InlineData(RequestPriority.Urgent)]
+    public async Task AddRequestAsync_ActiveClient_CreatesRequestWithSelectedPriority(RequestPriority priority)
     {
         await using var dbContext = _fixture.CreateDbContext();
         var (client, _, principal) = await CreateActorsAsync(dbContext);
@@ -41,7 +45,7 @@ public sealed class RequestServiceTests : IAsyncLifetime
             Title = "  Запрос на обслуживание  ",
             Description = "  Описание заявки  ",
             Status = RequestStatus.Cancelled,
-            Priority = RequestPriority.Urgent,
+            Priority = priority,
             CreatedAt = now.AddDays(-2),
             UpdatedAt = now.AddDays(-1),
             CompletedAt = now.AddDays(-1)
@@ -56,7 +60,7 @@ public sealed class RequestServiceTests : IAsyncLifetime
         Assert.Equal("Описание заявки", savedRequest.Description);
         Assert.Equal(client.Id, savedRequest.ClientId);
         Assert.Equal(RequestStatus.New, savedRequest.Status);
-        Assert.Equal(RequestPriority.Normal, savedRequest.Priority);
+        Assert.Equal(priority, savedRequest.Priority);
         Assert.InRange(savedRequest.CreatedAt, now, DateTime.UtcNow);
         Assert.Equal(savedRequest.CreatedAt, savedRequest.UpdatedAt);
         Assert.Null(savedRequest.CompletedAt);
@@ -257,8 +261,12 @@ public sealed class RequestServiceTests : IAsyncLifetime
         Assert.Empty(await verificationContext.Requests.ToListAsync());
     }
 
-    [Fact]
-    public async Task UpdateRequestAsync_ChangesPriorityAndAssigneeWithoutChangingStatus()
+    [Theory]
+    [InlineData(RequestPriority.Low)]
+    [InlineData(RequestPriority.Normal)]
+    [InlineData(RequestPriority.High)]
+    [InlineData(RequestPriority.Urgent)]
+    public async Task UpdateRequestAsync_ChangesPriorityAndAssigneeWithoutChangingStatus(RequestPriority priority)
     {
         await using var dbContext = _fixture.CreateDbContext();
         var (client, _, principal) = await CreateActorsAsync(dbContext);
@@ -282,7 +290,7 @@ public sealed class RequestServiceTests : IAsyncLifetime
             requestId,
             expectedUpdatedAt,
             RequestStatus.New,
-            RequestPriority.High,
+            priority,
             newAssignee.Id,
             principal);
 
@@ -290,8 +298,74 @@ public sealed class RequestServiceTests : IAsyncLifetime
         await using var verificationContext = _fixture.CreateDbContext();
         var updatedRequest = await verificationContext.Requests.SingleAsync(item => item.Id == requestId);
         Assert.Equal(RequestStatus.New, updatedRequest.Status);
-        Assert.Equal(RequestPriority.High, updatedRequest.Priority);
+        Assert.Equal(priority, updatedRequest.Priority);
         Assert.Equal(newAssignee.Id, updatedRequest.ResponsibleUserId);
+    }
+
+    [Fact]
+    public async Task AddRequestAsync_InvalidNumericPriority_RejectsRequest()
+    {
+        await using var dbContext = _fixture.CreateDbContext();
+        var (client, _, principal) = await CreateActorsAsync(dbContext);
+        var request = CreateRequest(client.Id);
+        request.Priority = (RequestPriority)int.MaxValue;
+
+        var result = await _fixture.CreateRequestService(dbContext).AddRequestAsync(request, principal);
+
+        Assert.False(result);
+        await using var verificationContext = _fixture.CreateDbContext();
+        Assert.Empty(await verificationContext.Requests.ToListAsync());
+    }
+
+    [Fact]
+    public async Task UpdateRequestAsync_InvalidNumericPriority_RejectsRequest()
+    {
+        await using var dbContext = _fixture.CreateDbContext();
+        var (client, _, principal) = await CreateActorsAsync(dbContext);
+        var request = CreateRequest(client.Id, RequestStatus.New);
+        dbContext.Requests.Add(request);
+        await dbContext.SaveChangesAsync();
+
+        var result = await _fixture.CreateRequestService(dbContext).UpdateRequestAsync(
+            request.Id,
+            request.UpdatedAt,
+            RequestStatus.New,
+            (RequestPriority)int.MaxValue,
+            null,
+            principal);
+
+        Assert.Equal(RequestUpdateResult.InvalidData, result);
+        await using var verificationContext = _fixture.CreateDbContext();
+        var savedRequest = await verificationContext.Requests.SingleAsync(item => item.Id == request.Id);
+        Assert.Equal(RequestPriority.Normal, savedRequest.Priority);
+    }
+
+    [Theory]
+    [InlineData(RequestPriority.Low)]
+    [InlineData(RequestPriority.Normal)]
+    [InlineData(RequestPriority.High)]
+    public async Task UpdateRequestAsync_UrgentPriorityChangesToOtherAllowedPriority(RequestPriority priority)
+    {
+        await using var dbContext = _fixture.CreateDbContext();
+        var (client, _, principal) = await CreateActorsAsync(dbContext);
+        var request = CreateRequest(client.Id, RequestStatus.New);
+        request.Priority = RequestPriority.Urgent;
+        dbContext.Requests.Add(request);
+        await dbContext.SaveChangesAsync();
+
+        var result = await _fixture.CreateRequestService(dbContext).UpdateRequestAsync(
+            request.Id,
+            request.UpdatedAt,
+            RequestStatus.New,
+            priority,
+            null,
+            principal);
+
+        Assert.Equal(RequestUpdateResult.Success, result);
+        await using var verificationContext = _fixture.CreateDbContext();
+        var savedRequest = await verificationContext.Requests.SingleAsync(item => item.Id == request.Id);
+        Assert.Equal(RequestStatus.New, savedRequest.Status);
+        Assert.Equal(priority, savedRequest.Priority);
     }
 
     [Fact]

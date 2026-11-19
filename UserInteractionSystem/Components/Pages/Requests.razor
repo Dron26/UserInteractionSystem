@@ -46,6 +46,16 @@
             <InputTextArea class="form-control" @bind-Value="newRequest.Description" />
         </div>
 
+        <div class="mb-3">
+            <label class="form-label" for="new-request-priority">Приоритет</label>
+            <InputSelect id="new-request-priority" class="form-select" @bind-Value="newRequest.Priority">
+                @foreach (var priority in Enum.GetValues<RequestPriority>())
+                {
+                    <option value="@priority">@GetPriorityName(priority)</option>
+                }
+            </InputSelect>
+        </div>
+
         <button type="submit" class="btn btn-success">
             Сохранить
         </button>
@@ -191,7 +201,8 @@ else
     private Request newRequest = new()
     {
         Title = string.Empty,
-        Description = string.Empty
+        Description = string.Empty,
+        Priority = RequestPriority.Normal
     };
 
     protected override async Task OnInitializedAsync()
@@ -272,7 +283,8 @@ else
             newRequest = new Request
             {
                 Title = string.Empty,
-                Description = string.Empty
+                Description = string.Empty,
+                Priority = RequestPriority.Normal
             };
         }
     }
@@ -301,7 +313,8 @@ else
         newRequest = new Request
         {
             Title = string.Empty,
-            Description = string.Empty
+            Description = string.Empty,
+            Priority = RequestPriority.Normal
         };
 
         showCreateForm = false;

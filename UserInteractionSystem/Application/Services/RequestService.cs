@@ -13,11 +13,16 @@ public class RequestService
 {
     private readonly ApplicationDbContext _dbContext;
     private readonly UserService _userService;
+    private readonly TimeProvider _timeProvider;
 
-    public RequestService(ApplicationDbContext dbContext, UserService userService)
+    public RequestService(
+        ApplicationDbContext dbContext,
+        UserService userService,
+        TimeProvider? timeProvider = null)
     {
         _dbContext = dbContext;
         _userService = userService;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<List<Request>> GetRequestsAsync()
@@ -30,6 +35,7 @@ public class RequestService
     public async Task<bool> AddRequestAsync(Request request, ClaimsPrincipal? currentUser)
     {
         if (request is null ||
+            !Enum.IsDefined(request.Priority) ||
             string.IsNullOrWhiteSpace(request.Title) ||
             request.Title.Trim().Length > 200 ||
             string.IsNullOrWhiteSpace(request.Description) ||
@@ -66,7 +72,6 @@ public class RequestService
         request.Title = request.Title.Trim();
         request.Description = request.Description.Trim();
         request.Status = RequestStatus.New;
-        request.Priority = RequestPriority.Normal;
         request.CreatedAt = now;
         request.UpdatedAt = now;
         request.CompletedAt = null;
@@ -102,13 +107,11 @@ public class RequestService
 
         DateTime? fromUtc = null;
         DateTime? toUtcExclusive = null;
-        var nowUtc = DateTime.UtcNow;
+        var nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
         switch (filter.Period)
         {
             case RequestDatePeriod.Today:
-                var localToday = DateTime.Today;
-                fromUtc = localToday.ToUniversalTime();
-                toUtcExclusive = localToday.AddDays(1).ToUniversalTime();
+                (fromUtc, toUtcExclusive) = InteractionTimeZone.GetCurrentMoscowDayBoundsUtc(nowUtc);
                 break;
             case RequestDatePeriod.LastWeek:
                 fromUtc = nowUtc.AddDays(-7);
@@ -121,14 +124,12 @@ public class RequestService
             case RequestDatePeriod.Custom:
                 if (filter.FromDate.HasValue)
                 {
-                    fromUtc = DateTime.SpecifyKind(filter.FromDate.Value.Date, DateTimeKind.Local).ToUniversalTime();
+                    fromUtc = InteractionTimeZone.GetMoscowDayBoundsUtc(filter.FromDate.Value).FromUtc;
                 }
 
                 if (filter.ToDate.HasValue)
                 {
-                    toUtcExclusive = DateTime.SpecifyKind(
-                        filter.ToDate.Value.Date.AddDays(1),
-                        DateTimeKind.Local).ToUniversalTime();
+                    toUtcExclusive = InteractionTimeZone.GetMoscowDayBoundsUtc(filter.ToDate.Value).ToUtcExclusive;
                 }
 
                 if (filter.FromDate.HasValue && filter.ToDate.HasValue &&
@@ -260,7 +261,7 @@ public class RequestService
         ClaimsPrincipal? currentUser)
     {
         if (!Enum.IsDefined(status) ||
-            priority is not (RequestPriority.Low or RequestPriority.Normal or RequestPriority.High))
+            !Enum.IsDefined(priority))
         {
             return RequestUpdateResult.InvalidData;
         }
